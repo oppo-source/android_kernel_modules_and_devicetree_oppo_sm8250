@@ -1,0 +1,9 @@
+&sdhc_1 {
+        status = "disabled";
+};
+
+&sdhc_2 {
+        cd-gpios = <&tlmm 69 GPIO_ACTIVE_HIGH>;
+        status = "ok";
+};
+
