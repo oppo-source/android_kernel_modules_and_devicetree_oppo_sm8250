@@ -610,6 +610,9 @@
 		touchpanel,pen-panel-coords = <3200 5120>;
 		touchpanel,pen-max-pressure = <4096>;
 		touchpanel,pen-max-tilt = <60 60>;
+		touchpanel,pen-id-map = <3 2
+					4 2
+					5 2>;
 		touchpanel,msecs-to-jiffies-time = <100>;
 		tp_type = <3>;
 		platform_support_project = <21027>;
@@ -662,6 +665,7 @@
 		status = "okay";
 		compatible = "sc,sc8547-master";
 		reg = <0x6F>;
+		ovp_reg = <0x36>; /* vbat_ovp:4.85V */
 
 		qcom,irq_gpio = <&tlmm 51 0x00>;
 

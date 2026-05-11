@@ -988,7 +988,6 @@ static void synaptics_auto_test(struct seq_file *s, void *chip_data, struct syna
     checkCMD(chip_info, 30);
     ret = touch_i2c_read_block(client, reg_info->F54_ANALOG_DATA_BASE + 3, 7, buffer);
 
-
     touch_i2c_write_byte(client, 0xff, 0x3);
     touch_i2c_read_block(client, reg_info->F55_SENSOR_CTRL01, syna_testdata->RX_NUM, buffer_rx);
     touch_i2c_read_block(client, reg_info->F55_SENSOR_CTRL02, syna_testdata->TX_NUM, buffer_tx);
@@ -1041,7 +1040,6 @@ static void synaptics_auto_test(struct seq_file *s, void *chip_data, struct syna
     //msleep(100);
     checkCMD(chip_info, 30);
     ret = touch_i2c_read_block(client, reg_info->F54_ANALOG_DATA_BASE + 3, 7, buffer);
-
 
     touch_i2c_write_byte(client, 0xff, 0x3);
     touch_i2c_read_block(client, reg_info->F55_SENSOR_CTRL01, syna_testdata->RX_NUM, buffer_rx);
@@ -2121,7 +2119,6 @@ static void synaptics_bootup_test(void *chip_data, const struct firmware *fw, st
     checkCMD(chip_info, 30);
     ret = touch_i2c_read_block(client, reg_info->F54_ANALOG_DATA_BASE + 3, 7, buffer);
 
-
     touch_i2c_write_byte(client, 0xff, 0x3);
     touch_i2c_read_block(client, reg_info->F55_SENSOR_CTRL01, hw_res->RX_NUM, buffer_rx);
     touch_i2c_read_block(client, reg_info->F55_SENSOR_CTRL02, hw_res->TX_NUM, buffer_tx);
@@ -2172,7 +2169,6 @@ static void synaptics_bootup_test(void *chip_data, const struct firmware *fw, st
     //msleep(100);
     checkCMD(chip_info, 30);
     ret = touch_i2c_read_block(client, reg_info->F54_ANALOG_DATA_BASE + 3, 7, buffer);
-
 
     touch_i2c_write_byte(client, 0xff, 0x3);
     touch_i2c_read_block(client, reg_info->F55_SENSOR_CTRL01, hw_res->RX_NUM, buffer_rx);

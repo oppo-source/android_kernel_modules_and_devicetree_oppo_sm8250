@@ -757,7 +757,7 @@ out:
             //strlcpy(&(ilits->ts->panel_data.manufacture_info.version[12]), dev_version, 3);
             if (ver_len <= 11) {
                 //snprintf(ilits->ts->panel_data.manufacture_info.version + 9, sizeof(dev_version),"%s", dev_version);
-                strlcpy(&ilits->ts->panel_data.manufacture_info.version[9], dev_version, 3);
+                strlcpy(&ilits->ts->panel_data.manufacture_info.version[7], dev_version, 3);
                 ILI_ERR("melo version %s\n", ilits->ts->panel_data.manufacture_info.version);
             } else {
                 strlcpy(&ilits->ts->panel_data.manufacture_info.version[12], dev_version, 3);

@@ -570,7 +570,8 @@ int ili_proximity_far(int mode)
                 break;
             }
 
-            ret = ili_set_tp_data_len(ilits->gesture_mode, true, NULL);
+            ret = ili_switch_tp_mode(P5_X_FW_GESTURE_MODE);
+
             if (ret < 0) {
                 ILI_ERR("Switch to gesture mode failed during proximity far\n");
             }
@@ -634,7 +635,7 @@ void ili_set_gesture_symbol(void)
 
 int ili_move_gesture_code_iram(int mode)
 {
-    int i, ret = 0, timeout = 100;
+    int i, ret = 0, timeout = 10;
     u8 cmd[2] = {0};
     u8 cmd_write[3] = {0x01, 0x0A, 0x05};
     /*
@@ -682,21 +683,20 @@ int ili_move_gesture_code_iram(int mode)
         goto out;
     }
 
-    //ili_irq_enable();
+    ili_irq_enable();
 
     for (i = 0; i < timeout; i++) {
         /* Check ready for load code */
-        ret = ilits->wrapper(cmd_write, sizeof(cmd_write), cmd, sizeof(u8), OFF, OFF);
+        ret = ilits->wrapper(cmd_write, sizeof(cmd_write), cmd, sizeof(u8), ON, OFF);
         ILI_DBG("gesture ready byte = 0x%x\n", cmd[0]);
 
         if (cmd[0] == 0x91) {
             ILI_INFO("Ready to load gesture code\n");
             break;
         }
-		mdelay(2);
     }
 
-    //ili_irq_disable();
+    ili_irq_disable();
 
     if (i >= timeout) {
         ILI_ERR("Gesture is not ready (0x%x), try to run its recovery\n", cmd[0]);
@@ -749,10 +749,6 @@ int ili_touch_esd_gesture_iram(void)
         return ret;
     }
 
-	if (!ilits->gesture_load_code) {
-		ges_run = I2C_ESD_GESTURE_CORE146_RUN;
-	}
-
     if (ilits->chip->core_ver < CORE_VER_1460) {
         if (ilits->chip->core_ver >= CORE_VER_1420) {
             ges_pwd_addr = I2C_ESD_GESTURE_PWD_ADDR;
@@ -765,7 +761,7 @@ int ili_touch_esd_gesture_iram(void)
         pwd_len = 4;
     }
 
-    ILI_INFO("ESD Gesture PWD Addr = 0x%X, PWD = 0x%X, GES_RUN = 0x%X, core_ver = 0x%X\n",
+    ILI_INFO("ESD Gesture PWD Addr = 0x%X, PWD = 0x%X, GES_RUN = 0%X, core_ver = 0x%X\n",
              ges_pwd_addr, ges_pwd, ges_run, ilits->chip->core_ver);
     /* write a special password to inform FW go back into gesture mode */
     ret = ili_ice_mode_write(ges_pwd_addr, ges_pwd, pwd_len);
@@ -1204,7 +1200,6 @@ void ili_report_ap_mode(u8 *buf, int len)
     int i = 0;
     u32 xop = 0, yop = 0;
 	u8 touch_major = 0;
-	struct touchpanel_snr *snr = &ilits->ts->snr;
 
 	for (i = 0; i < MAX_TOUCH_NUM; i++) {
 		if (ilits->position_high_resolution == OFF) {
@@ -1246,14 +1241,6 @@ void ili_report_ap_mode(u8 *buf, int len)
 		ilits->points[i].touch_major = touch_major;
         ilits->points[i].status = 1;
 		ILI_DBG("original x = %d, y = %d p = %d\n", xop, yop, touch_major);
-
-		if (ilits->ts->snr_read_support && snr->doing) {
-			snr->x = ilits->points[i].x;
-			snr->y = ilits->points[i].y;
-			snr->channel_x = snr->x * ilits->hw_res->TX_NUM / ilits->ts->resolution_info.max_x;
-			snr->channel_y = snr->y * ilits->hw_res->RX_NUM / ilits->ts->resolution_info.max_y;
-			ILI_INFO("snr: [%d %d, %d] {%d %d} \n", snr->x, snr->y, i, snr->channel_x, snr->channel_y);
-		}
     }
 
     ilitek_tddi_touch_send_debug_data(buf, len);
@@ -1264,7 +1251,6 @@ void ili_debug_mode_report_point(u8 *buf, int len)
     int i = 0;
     u32 xop = 0, yop = 0;
     static u8 p[MAX_TOUCH_NUM];
-    struct touchpanel_snr *snr = &ilits->ts->snr;
 
     for (i = 0; i < MAX_TOUCH_NUM; i++) {
 		if (ilits->position_high_resolution == OFF) {
@@ -1312,14 +1298,6 @@ void ili_debug_mode_report_point(u8 *buf, int len)
         ilits->points[i].touch_major = p[i];
         ilits->points[i].z = p[i];
         ILI_DBG("original x = %d, y = %d p = %d\n", xop, yop, p[i]);
-
-		if (ilits->ts->snr_read_support && snr->doing) {
-			snr->x = ilits->points[i].x;
-			snr->y = ilits->points[i].y;
-			snr->channel_x = snr->x * ilits->hw_res->TX_NUM / ilits->ts->resolution_info.max_x;
-			snr->channel_y = snr->y * ilits->hw_res->RX_NUM / ilits->ts->resolution_info.max_y;
-			ILI_INFO("snr: [%d %d, %d] {%d %d} \n", snr->x, snr->y, i, snr->channel_x, snr->channel_y);
-		}
     }
 }
 
@@ -1622,9 +1600,7 @@ out:
 int ili_mp_test_handler(char *apk, bool lcm_on, struct seq_file *s, char *message)
 {
     int ret = 0;
-#if 0
-    u32 reg_data = 0;
-#endif
+   // u32 reg_data = 0;
 
     if (atomic_read(&ilits->fw_stat)) {
         ILI_ERR("fw upgrade processing, ignore\n");
@@ -2157,7 +2133,7 @@ int ili_report_handler(void)
     if (checksum != pack_checksum && pid != P5_X_I2CUART_PACKET_ID) {
         ILI_ERR("Checksum Error (0x%X)! Pack = 0x%X, len = %d\n", checksum, pack_checksum, rlen);
         ili_debug_en = DEBUG_ALL;
-        ili_dump_data(trdata, 8, rlen, 0, "finger report with wrong");
+        //ili_dump_data(trdata, 8, rlen, 0, "finger report with wrong");
         ili_debug_en = tmp;
         ret = -1;
         goto out;
@@ -2885,12 +2861,10 @@ static int ilitek_get_vendor(void *chip_data, struct panel_info *panel_data)
 
 static void ilitek_black_screen_test(void *chip_data, char *message)
 {
-    int ret;
     struct ilitek_ts_data *chip_info = (struct ilitek_ts_data *)chip_data;
     ILI_INFO("enter %s\n", __func__);
     mutex_lock(&chip_info->touch_mutex);
-    ret = ili_mp_test_handler(NULL, OFF, NULL, message);
-    tp_healthinfo_report(chip_info->monitor_data_v2, HEALTH_TEST_BLACKSCREEN, &ret);
+    ili_mp_test_handler(NULL, OFF, NULL, message);
     mutex_unlock(&chip_info->touch_mutex);
 }
 
@@ -2927,34 +2901,6 @@ static u8 ilitek_get_touch_direction(void *chip_data)
     return chip_info->touch_direction;
 }
 
-static int ilitek_smooth_lv_set(void *chip_data, int level)
-{
-	struct ilitek_ts_data *chip_info = (struct ilitek_ts_data *)chip_data;
-	int ret = 0;
-	uint8_t temp[4] = {0x01, 0x0B, 0x02, 0x00};
-
-	mutex_lock(&chip_info->touch_mutex);
-	temp[3] = level;
-	ILI_INFO("write 0x01, 0x0B, 0x02, 0x%X(level)\n", level);
-	ret = ilits->wrapper(temp, 4, NULL, 0, OFF, OFF);
-	mutex_unlock(&chip_info->touch_mutex);
-	return ret;
-}
-
-static int ilitek_sensitive_lv_set(void *chip_data, int level)
-{
-	struct ilitek_ts_data *chip_info = (struct ilitek_ts_data *)chip_data;
-	int ret = 0;
-	uint8_t temp[4] = {0x01, 0x0B, 0x01, 0x00};
-
-	mutex_lock(&chip_info->touch_mutex);
-	temp[3] = level;
-	ILI_INFO("write 0x01, 0x0B, 0x01, 0x%X(level)\n", level);
-	ret = ilits->wrapper(temp, 4, NULL, 0, OFF, OFF);
-	mutex_unlock(&chip_info->touch_mutex);
-	return ret;
-}
-
 static bool ilitek_irq_throw_away(void *chip_data)
 {
     struct ilitek_ts_data *chip_info = (struct ilitek_ts_data *)chip_data;
@@ -2968,33 +2914,7 @@ static bool ilitek_irq_throw_away(void *chip_data)
         return true;
     }
 
-	/*ignore first irq after hw rst pin reset*/
-	if (ilits->ignore_first_irq) {
-		ILI_DBG("ignore_first_irq\n");
-		ilits->ignore_first_irq = false;
-		return true;
-	}
-
-	if (!chip_info->fw_update_stat || !ilits->report || atomic_read(&ilits->tp_reset) ||
-		atomic_read(&ilits->fw_stat) || atomic_read(&ilits->tp_sw_mode) ||
-		atomic_read(&ilits->mp_stat) || atomic_read(&ilits->tp_sleep) ||
-		atomic_read(&ilits->esd_stat)) {
-		ILI_INFO("ignore interrupt !\n");
-		return true;
-	}
-
     return false;
-}
-
-static int ilitek_reset_gpio_control(void *chip_data, bool enable)
-{
-    struct ilitek_ts_data *chip_info = (struct ilitek_ts_data *)chip_data;
-    if (gpio_is_valid(chip_info->hw_res->reset_gpio)) {
-        ILI_INFO("%s: set reset state %d\n", __func__, enable);
-        gpio_set_value(chip_info->hw_res->reset_gpio, enable);
-    }
-
-    return 0;
 }
 
 static struct oplus_touchpanel_operations ilitek_ops = {
@@ -3012,11 +2932,8 @@ static struct oplus_touchpanel_operations ilitek_ops = {
     .get_vendor                 = ilitek_get_vendor,
     .black_screen_test          = ilitek_black_screen_test,
     .esd_handle                 = ilitek_esd_handle,
-    .reset_gpio_control         = ilitek_reset_gpio_control,
     .set_touch_direction        = ilitek_set_touch_direction,
     .get_touch_direction        = ilitek_get_touch_direction,
-	.smooth_lv_set				= ilitek_smooth_lv_set,
-	.sensitive_lv_set			= ilitek_sensitive_lv_set,
     .tp_queue_work_prepare      = ilitek_reset_queue_work_prepare,
     .tp_irq_throw_away          = ilitek_irq_throw_away,
 };
@@ -3032,7 +2949,6 @@ static int ilitek_read_debug_data(struct seq_file *s,
     int xch = ilits->xch_num;
     int ych = ilits->ych_num;
     u8 *buf = ilits->tr_buf;
-	int offset_len = 0;
 
     if (ERR_ALLOC_MEM(buf)) {
         ILI_ERR("Failed to allocate packet memory, %ld\n", PTR_ERR(buf));
@@ -3099,64 +3015,41 @@ static int ilitek_read_debug_data(struct seq_file *s,
     }
 
     if (i < 10) {
-		if (ilits->position_high_resolution == OFF) {
-			offset_len = 35;
-		} else {
-			offset_len = 45;
-		}
         for (i = 0; i < ych; i++) {
             seq_printf(s, "[%2d]", i);
+
             for (j = 0; j < xch; j++) {
                 s16 temp;
-                temp = (s16)((buf[(i * xch + j) * 2 + offset_len] << 8)
-                             + buf[(i * xch + j) * 2 + offset_len + 1]);
+				if (ilits->position_high_resolution == OFF) {
+	                temp = (s16)((buf[(i * xch + j) * 2 + 35] << 8)
+	                             + buf[(i * xch + j) * 2 + 35 + 1]);
+				} else {
+	                temp = (s16)((buf[(i * xch + j) * 2 + 45] << 8)
+	                             + buf[(i * xch + j) * 2 + 45 + 1]);
+				}
                 seq_printf(s, "%5d,", temp);
             }
+
             seq_printf(s, "\n");
         }
 
-		seq_printf(s, "Y Data:");
-		for (i = 2 * xch * ych + offset_len; i < 2 * xch * ych + 2 * ych + offset_len; i += 2) {
-			s16 temp;
-			temp = (s16)((buf[i] << 8) + buf[i + 1]);
-			seq_printf(s, "%5d,", temp);
-		}
-		seq_printf(s, "\n");
-
-		seq_printf(s, "X Data:");
-		for (i = 2 * xch * ych + 2 * ych + offset_len; i < 2 * xch * ych + 2 * ych + 2 * xch + offset_len; i += 2) {
-			s16 temp;
-			temp = (s16)((buf[i] << 8) + buf[i + 1]);
-			seq_printf(s, "%5d,", temp);
-		}
-		seq_printf(s, "\n");
-
-		seq_printf(s, "self key and other Data:");
-		for (i = 2 * xch * ych + 2 * ych + 2 * xch + offset_len; i < ilits->
-tp_data_len - 1; i += 2) {
-			s16 temp;
-			temp = (s16)((buf[i] << 8) + buf[i + 1]);
-			seq_printf(s, "%5d,", temp);
-		}
-		seq_printf(s, "\n");
-
         for (i = 0; i < MAX_TOUCH_NUM; i++) {
 			if (ilits->position_high_resolution == OFF) {
-	            if ((buf[(3 * i) + 5] != 0xFF) || (buf[(3 * i) + 6] != 0xFF)
-	                || (buf[(3 * i) + 7] != 0xFF)) {
-	                break; // has touch
-	            }
+				if ((buf[(3 * i) + 5] != 0xFF) || (buf[(3 * i) + 6] != 0xFF)
+					|| (buf[(3 * i) + 7] != 0xFF)) {
+				break; // has touch
+				}
 			} else {
-	            if ((buf[(4 * i) + 5] != 0xFF) || (buf[(4 * i) + 6] != 0xFF)
-	                || (buf[(4 * i) + 7] != 0xFF) || (buf[(4 * i) + 8] != 0xFF)) {
-	                break; // has touch
-	            }
+				if ((buf[(4 * i) + 5] != 0xFF) || (buf[(4 * i) + 6] != 0xFF)
+					|| (buf[(4 * i) + 7] != 0xFF) || (buf[(4 * i) + 8] != 0xFF)) {
+					break; // has touch
+				}
 			}
         }
+
         if (i == MAX_TOUCH_NUM) {
             tp_touch_btnkey_release();
         }
-
     } else {
 		ILI_ERR("get data failed buf[0] = 0x%X\n", buf[0]);
         seq_printf(s, "get data failed\n");
@@ -3251,151 +3144,12 @@ static void ilitek_baseline_read(struct seq_file *s, void *chip_data)
     ilitek_read_debug_data(s, chip_info, P5_X_FW_RAW_DATA_MODE);
 }
 
-static int ilitek_read_delta_snr_data(struct seq_file *s,
-                                  struct ilitek_ts_data *chip_info,
-                                  u8 read_type, int index)
-{
-    int ret;
-    u8 test_cmd[4] = { 0 };
-    int i = 0;
-    int xch = ilits->xch_num;
-    int ych = ilits->ych_num;
-    u8 *buf = ilits->tr_buf;
-    s16 temp = 0;
-    bool is_delta_snr = ILITEK_DELTA_SNR_MASK & read_type;
-    struct touchpanel_snr *snr = &ilits->ts->snr;
-
-    read_type &= 0xF;
-    ILI_INFO("snr %d 0x%x\n", is_delta_snr, read_type);
-    if (ERR_ALLOC_MEM(buf)) {
-        ILI_ERR("Failed to allocate packet memory, %ld\n", PTR_ERR(buf));
-        return -1;
-    }
-
-    mutex_lock(&ilits->touch_mutex);
-    ret = ili_set_tp_data_len(DATA_FORMAT_DEBUG, false, NULL);
-    if (ret < 0) {
-        ILI_ERR("Failed to switch debug mode\n");
-        seq_printf(s, "get data failed\n");
-        mutex_unlock(&ilits->touch_mutex);
-        ili_kfree((void **)&buf);
-        return -1;
-    }
-
-    test_cmd[0] = 0xFA;
-    test_cmd[1] = read_type;
-    ILI_INFO("debug cmd 0x%X, 0x%X", test_cmd[0], test_cmd[1]);
-    ret = ilits->wrapper(test_cmd, 2, NULL, 0, ON, OFF);
-    atomic_set(&ilits->cmd_int_check, ENABLE);
-    enable_irq(ilits->irq_num);
-
-    for (i = 0; i < 10; i++) {
-        int rlen = 0;
-        ret = ilits->detect_int_stat(false);
-        rlen = ilits->tp_data_len;
-        ILI_INFO("Packget length = %d\n", rlen);
-        ret = ilits->wrapper(NULL, 0, buf, rlen, OFF, OFF);
-
-        if (ret < 0 || rlen < 0 || rlen >= TR_BUF_SIZE) {
-            ILI_ERR("Length of packet is invaild\n");
-            continue;
-        }
-
-        if (ilits->position_high_resolution == OFF) {
-            if (buf[0] == P5_X_DEBUG_PACKET_ID) {
-                break;
-            }
-        } else {
-            if (buf[0] == P5_X_DEBUG_HIGH_RESOLUTION_PACKET_ID) {
-                break;
-            }
-        }
-
-        atomic_set(&ilits->cmd_int_check, DISABLE);
-    }
-
-    disable_irq_nosync(ilits->irq_num);
-
-    switch (read_type) {
-    case P5_X_FW_RAW_DATA_MODE:
-        seq_printf(s, "raw_data:\n");
-        break;
-
-    case P5_X_FW_DELTA_DATA_MODE:
-        if (is_delta_snr)
-            goto START_TO_READ;
-        seq_printf(s, "diff_data:\n");
-        break;
-
-    default:
-        seq_printf(s, "read type not support\n");
-        break;
-    }
-
-START_TO_READ:
-    if (is_delta_snr) {
-        if (! (xch * snr->channel_y + snr->channel_x < xch * ych)) {
-        ILI_INFO("index visiting out of boundary! \n");
-        goto RET_OUT;
-        }
-        if (ilits->position_high_resolution == OFF) {
-            temp = (s16)((buf[(snr->channel_y * xch + snr->channel_x) * 2 + 35] << 8)
-                + buf[(snr->channel_y * xch + snr->channel_x) * 2 + 35 + 1]);
-        } else {
-            temp = (s16)((buf[(snr->channel_y * xch + snr->channel_x) * 2 + 45] << 8)
-                + buf[(snr->channel_y * xch + snr->channel_x) * 2 + 45 + 1]);
-        }
-        if (index) {
-            snr->max = temp > snr->max ? temp : snr->max;
-            snr->min = temp < snr->min ? temp : snr->min;
-        } else {
-            snr->max = temp;
-            snr->min = temp;
-        }
-        snr->sum += temp;
-        ILI_INFO("snr-cover [%d %d] %d \n", snr->channel_x, snr->channel_y, temp);
-    }
-
-RET_OUT:
-    /* change to demo mode */
-    if (ili_set_tp_data_len(DATA_FORMAT_DEMO, false, NULL) < 0) {
-        ILI_ERR("Failed to set tp data length\n");
-    }
-
-    mutex_unlock(&ilits->touch_mutex);
-    return 0;
-}
-
-static void ilitek_delta_snr_read(struct seq_file *s, void *chip_data, uint32_t count)
-{
-    struct ilitek_ts_data *chip_info = (struct ilitek_ts_data *)chip_data;
-    struct touchpanel_snr *snr = &ilits->ts->snr;
-    int i = 0;
-
-    ILI_INFO("s->size = %d  s->count = %d\n", (int)s->size, (int)s->count);
-    seq_printf(s, "%d|%d|", snr->channel_x, snr->channel_y);
-    for (i = 0; i < count; i++) {
-        ilitek_read_delta_snr_data(s, chip_info, P5_X_FW_DELTA_SNR_DATA_MODE, i);
-    }
-	/* change to demo mode */
-    if (ili_set_tp_data_len(DATA_FORMAT_DEMO, false, NULL) < 0) {
-        ILI_ERR("Failed to set tp data length\n");
-    }
-    snr->noise = snr->max - snr->min;
-    seq_printf(s, "%d|", snr->max);
-    seq_printf(s, "%d|", snr->min);
-    seq_printf(s, "%d|", snr->sum / count);
-    seq_printf(s, "%d\n", snr->noise);
-    SNR_RESET(snr);
-}
-
 static void ilitek_main_register_read(struct seq_file *s, void *chip_data)
 {
     ILI_INFO("\n");
 }
 
 static struct debug_info_proc_operations ilitek_debug_info_proc_ops = {
-    .delta_snr_read = ilitek_delta_snr_read,
     .baseline_read = ilitek_baseline_read,
     .delta_read = ilitek_delta_read,
     .main_register_read = ilitek_main_register_read,
@@ -3403,7 +3157,6 @@ static struct debug_info_proc_operations ilitek_debug_info_proc_ops = {
 
 static int ilitek_tp_auto_test_read_func(struct seq_file *s, void *v)
 {
-    int ret;
     struct touchpanel_data *ts = s->private;
 
     if (!ts) {
@@ -3420,8 +3173,7 @@ static int ilitek_tp_auto_test_read_func(struct seq_file *s, void *v)
 
     mutex_lock(&ilits->touch_mutex);
     ILI_INFO("enter %s\n", __func__);
-    ret = ili_mp_test_handler(NULL, ON, s, NULL);
-    tp_healthinfo_report(&ts->monitor_data_v2, HEALTH_TEST_AUTO, &ret);
+    ili_mp_test_handler(NULL, ON, s, NULL);
     mutex_unlock(&ilits->touch_mutex);
     operate_mode_switch(ts);
     return 0;
@@ -3754,7 +3506,6 @@ static void ilitek_flag_data_init(void)
     ilits->tp_data_format = DATA_FORMAT_DEMO;
     ilits->tp_data_len = P5_X_DEMO_MODE_PACKET_LEN;
     ilits->tp_data_mode = AP_MODE;
-
     ilits->position_high_resolution = true;
 
     if (TDDI_RST_BIND) {
@@ -3891,7 +3642,6 @@ int __maybe_unused ilitek7807s_spi_probe(struct spi_device *spi)
 {
     struct touchpanel_data *ts = NULL;
     int ret = 0;
-    u64 time_counter = 0;
     ILI_INFO("ilitek spi probe\n");
 
     if (tp_register_times > 0) {
@@ -3909,8 +3659,6 @@ int __maybe_unused ilitek7807s_spi_probe(struct spi_device *spi)
         ILI_ERR("Full duplex not supported by master\n");
         return -EIO;
     }
-
-    reset_healthinfo_time_counter(&time_counter);
 
     /*step1:Alloc chip_info*/
     if (ilitek_alloc_global_data(spi) < 0) {
@@ -3969,7 +3717,6 @@ int __maybe_unused ilitek7807s_spi_probe(struct spi_device *spi)
     ILI_INFO("platform probe tp_int = %d tp_rst = %d irq_num = %d\n", ilits->tp_int, ilits->tp_rst,
              ilits->irq_num);
     ilits->fw_name = ts->panel_data.fw_name;
-    ilits->monitor_data_v2 = &ts->monitor_data_v2;
     ilits->test_limit_name = ts->panel_data.test_limit_name;
     ILI_INFO("fw_name = %s test_limit_name = %s\n", ilits->fw_name, ilits->test_limit_name);
     ILI_INFO("ts->resolution_info.max_x = %d ts->resolution_info.max_y = %d\n", \
@@ -4002,10 +3749,6 @@ int __maybe_unused ilitek7807s_spi_probe(struct spi_device *spi)
         ILI_INFO("%s:change esd handle time to %d s\n",
                  __func__,
                  ts->esd_info.esd_work_time / HZ);
-    }
-
-    if (ts->health_monitor_v2_support) {
-        tp_healthinfo_report(&ts->monitor_data_v2, HEALTH_PROBE, &time_counter);
     }
 
     ILI_INFO("ILITEK Driver loaded successfully!\n");
@@ -4099,6 +3842,16 @@ static const struct dev_pm_ops tp_pm_ops = {
  * in a dts file.
  *
  */
+/*static const struct spi_device_id tp_id[] =
+{
+#ifdef CONFIG_TOUCHPANEL_MULTI_NOFLASH
+    { "oplus,tp_noflash", 0 },
+#else
+    {TPD_DEVICE, 0},
+#endif
+    {},
+};*/
+
 static struct of_device_id tp_match_table[] = {
 #ifdef CONFIG_TOUCHPANEL_MULTI_NOFLASH
     { .compatible = "oplus,tp_noflash",},
@@ -4111,6 +3864,7 @@ static struct of_device_id tp_match_table[] = {
 static struct spi_driver tp_spi_driver = {
     .probe = ilitek7807s_spi_probe,
     .remove = ilitek7807s_spi_remove,
+//    .id_table   = tp_id,
     .driver = {
         .name    = TPD_DEVICE,
         .owner = THIS_MODULE,
@@ -4119,7 +3873,7 @@ static struct spi_driver tp_spi_driver = {
     },
 };
 
-static int32_t __init  tp_driver_init_ili_7807s(void)
+int  __init tp_driver_init_ili_7807s(void)
 {
     int res = 0;
     ILI_INFO("%s is called\n", __func__);
@@ -4140,7 +3894,7 @@ static int32_t __init  tp_driver_init_ili_7807s(void)
     return res;
 }
 
-static void __exit  tp_driver_exit_ili_7807s(void)
+void  __exit tp_driver_exit_ili_7807s(void)
 {
     spi_unregister_driver(&tp_spi_driver);
 }

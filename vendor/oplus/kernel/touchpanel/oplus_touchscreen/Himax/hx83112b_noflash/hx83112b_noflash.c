@@ -5574,7 +5574,6 @@ static int hx83112b_nf_reset(void *chip_data)
     }
     hx83112b_nf_sense_on(0x00);
 
-
     #ifdef CONFIG_TOUCHPANEL_MTK_PLATFORM
     enable_irq(chip_info->hx_irq);
     #endif

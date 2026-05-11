@@ -228,7 +228,7 @@ static ssize_t gt1x_tool_write(struct file *filp, const char __user * buff, size
         return -1;
     }
 
-    ret = copy_from_user(cmd_head, (struct st_cmd_head __user *)buff, CMD_HEAD_LENGTH);
+    ret = copy_from_user(cmd_head, buff, CMD_HEAD_LENGTH);
     if (ret) {
         TPD_INFO("copy_from_user failed.");
     }

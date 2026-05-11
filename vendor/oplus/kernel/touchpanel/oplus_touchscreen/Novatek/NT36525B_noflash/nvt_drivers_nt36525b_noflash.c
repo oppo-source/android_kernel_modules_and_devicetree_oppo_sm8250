@@ -106,13 +106,20 @@ static const struct nvt_ts_mem_map NT36672A_memory_map = {
 };
 
 static const struct nvt_ts_trim_id_table trim_id_table[] = {
-    {
-        .id = {0x0B, 0xFF, 0xFF, 0x25, 0x65, 0x03},
-        .mask = {1, 0, 0, 1, 1, 1},
-        .mmap = &NT36672A_memory_map,
-        .carrier_system = 0,
-        .support_hw_crc = 1
-    },
+	{
+		.id = {0x0B, 0xFF, 0xFF, 0x25, 0x65, 0x03},
+		.mask = {1, 0, 0, 1, 1, 1},
+		.mmap = &NT36672A_memory_map,
+		.carrier_system = 0,
+		.support_hw_crc = 1
+	},
+	{
+		.id = {0x0C, 0xFF, 0xFF, 0x25, 0x65, 0x03},
+		.mask = {1, 0, 0, 1, 1, 1},
+		.mmap = &NT36672A_memory_map,
+		.carrier_system = 0,
+		.support_hw_crc = 1
+	},
 };
 
 #ifdef CONFIG_TOUCHPANEL_MTK_PLATFORM
@@ -120,7 +127,7 @@ static const struct nvt_ts_trim_id_table trim_id_table[] = {
 static const struct mtk_chip_config spi_ctrdata = {
     .rx_mlsb = 1,
     .tx_mlsb = 1,
-    /*.cs_pol = 0,*/
+    .cs_pol = 0,
 };
 #else
 static const struct mt_chip_conf spi_ctrdata = {
@@ -192,7 +199,7 @@ Description:
 return:
     n.a.
 *******************************************************/
-static void nvt_bootloader_reset_noflash(struct chip_data_nt36525b *chip_info)
+void nvt_bootloader_reset_noflash(struct chip_data_nt36525b *chip_info)
 {
     //---reset cmds to SWRST_N8_ADDR---
     TPD_INFO("%s is called!\n", __func__);
@@ -738,7 +745,6 @@ firmware into each partition.
 return:
         n.a.
 *******************************************************/
-
 /*static int32_t Write_Partition(struct chip_data_nt36525b *chip_info, const u8 *fwdata, size_t fwsize)
 {
     uint32_t list = 0;
@@ -797,7 +803,6 @@ out:
     kfree(len_array);
     return ret;
 }*/
-
 
 static int32_t Write_Partition(struct chip_data_nt36525b *chip_info, const u8 *fwdata, size_t fwsize)
 {
@@ -1074,7 +1079,7 @@ fail:
     return ret;
 }
 
-static int32_t nvt_nf_detect_chip(struct chip_data_nt36525b *chip_info)
+int32_t nvt_nf_detect_chip(struct chip_data_nt36525b *chip_info)
 {
     int32_t ret = 0;
     int i;
@@ -2705,9 +2710,9 @@ static void store_to_file(int fd, char *format, ...)
 #ifdef CONFIG_ARCH_HAS_SYSCALL_WRAPPER
 	ksys_write(fd, buf, strlen(buf));
 #else
-	sys_write(fd, buf, strlen(buf));
+        sys_write(fd, buf, strlen(buf));
 #endif
-	}
+    }
 }
 
 /*******************************************************
@@ -3590,10 +3595,10 @@ TEST_END:
 	ksys_mkdir("/sdcard/TpTestReport/screenOff/NG", 0666);
 	fd = ksys_open(data_buf, O_WRONLY | O_CREAT | O_TRUNC, 0);
 #else
-	sys_mkdir("/sdcard/TpTestReport/screenOff", 0666);
-	sys_mkdir("/sdcard/TpTestReport/screenOff/OK", 0666);
-	sys_mkdir("/sdcard/TpTestReport/screenOff/NG", 0666);
-	fd = sys_open(data_buf, O_WRONLY | O_CREAT | O_TRUNC, 0);
+    sys_mkdir("/sdcard/TpTestReport/screenOff", 0666);
+    sys_mkdir("/sdcard/TpTestReport/screenOff/OK", 0666);
+    sys_mkdir("/sdcard/TpTestReport/screenOff/NG", 0666);
+    fd = sys_open(data_buf, O_WRONLY | O_CREAT | O_TRUNC, 0);
 #endif
     if (fd < 0) {
         TPD_INFO("Open log file '%s' failed.\n", data_buf);
@@ -3661,9 +3666,9 @@ OUT:
 #ifdef CONFIG_ARCH_HAS_SYSCALL_WRAPPER
 	ksys_close(fd);
 #else
-	sys_close(fd);
+        sys_close(fd);
 #endif
-	}
+    }
     set_fs(old_fs);
 
     snprintf(message, MESSAGE_SIZE, "%d errors. %s", err_cnt, buf);
@@ -4715,13 +4720,12 @@ TEST_END:
 	ksys_mkdir("/sdcard/TpTestReport/screenOn/NG", 0666);
 	nvt_testdata->fd = ksys_open(data_buf, O_WRONLY | O_CREAT | O_TRUNC, 0);
 #else
-	sys_mkdir("/sdcard/TpTestReport", 0666);
-	sys_mkdir("/sdcard/TpTestReport/screenOn", 0666);
-	sys_mkdir("/sdcard/TpTestReport/screenOn/OK", 0666);
-	sys_mkdir("/sdcard/TpTestReport/screenOn/NG", 0666);
-	nvt_testdata->fd = sys_open(data_buf, O_WRONLY | O_CREAT | O_TRUNC, 0);
+    sys_mkdir("/sdcard/TpTestReport", 0666);
+    sys_mkdir("/sdcard/TpTestReport/screenOn", 0666);
+    sys_mkdir("/sdcard/TpTestReport/screenOn/OK", 0666);
+    sys_mkdir("/sdcard/TpTestReport/screenOn/NG", 0666);
+    nvt_testdata->fd = sys_open(data_buf, O_WRONLY | O_CREAT | O_TRUNC, 0);
 #endif
-
     if (nvt_testdata->fd < 0) {
         TPD_INFO("Open log file '%s' failed.\n", data_buf);
         //seq_printf(s, "Open log file '%s' failed.\n", data_buf);
@@ -4809,7 +4813,7 @@ OUT:
 #ifdef CONFIG_ARCH_HAS_SYSCALL_WRAPPER
 	ksys_close(nvt_testdata->fd);
 #else
-	sys_close(nvt_testdata->fd);
+        sys_close(nvt_testdata->fd);
 #endif
     }
     set_fs(old_fs);
@@ -5162,7 +5166,7 @@ static void nova_init_oplus_apk_op(struct touchpanel_data *ts)
 
 
 /*********** Start of SPI Driver and Implementation of it's callbacks*************************/
-static int __maybe_unused nvt_tp_probe(struct spi_device *client)
+int __maybe_unused nvt_tp_probe(struct spi_device *client)
 {
     struct chip_data_nt36525b *chip_info = NULL;
     struct touchpanel_data *ts = NULL;
@@ -5337,7 +5341,6 @@ ts_malloc_failed:
     TPD_INFO("%s, probe error\n", __func__);
     return ret;
 }
-
 static int nvt_tp_remove(struct spi_device *client)
 {
     struct touchpanel_data *ts = spi_get_drvdata(client);
@@ -5347,7 +5350,6 @@ static int nvt_tp_remove(struct spi_device *client)
 
     return 0;
 }
-
 static int nvt_spi_suspend(struct device *dev)
 {
     struct touchpanel_data *ts = dev_get_drvdata(dev);

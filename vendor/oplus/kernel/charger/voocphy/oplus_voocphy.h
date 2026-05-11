@@ -717,6 +717,7 @@ struct oplus_voocphy_manager {
 	bool force_3a_flag;
 	bool btb_temp_over;
 	bool btb_err_first;
+	bool vbatt_ovp_status;
 	bool usb_bad_connect;
 	bool fastchg_ing;
 	bool fastchg_dummy_start;
@@ -834,6 +835,7 @@ struct oplus_voocphy_manager {
 	unsigned int vooc_ntime_full_voltage;
 	int ovp_reg;
 	int ocp_reg;
+	int reg_ctrl_1;
 	int adapter_check_vooc_head_count;
 	int adapter_check_cmd_data_count;
 
@@ -900,6 +902,11 @@ struct oplus_voocphy_manager {
 	int cp_work_mode;
 	int pps_ocp_max;
 	bool workaround_for_100w;
+	unsigned int current_full_limit;
+	unsigned int pre_current_full_limit;
+	bool dchg;
+	bool full_limit_curr;
+	unsigned int full_limit_count;
 };
 
 struct oplus_voocphy_operations {
@@ -945,6 +952,7 @@ struct oplus_voocphy_operations {
 	bool (*get_chg_pmid2out)(void);
 	int (*clk_err_clean)(void);
 	int (*set_ufcs_enable)(struct oplus_voocphy_manager *chip, bool enable);
+	int (*set_sstimeout_ucp_enable)(struct oplus_voocphy_manager *chip, bool enable);
 };
 
 #define VOOCPHY_LOG_BUF_LEN 1024
@@ -1058,4 +1066,5 @@ void oplus_voocphy_clear_variables(void);
 void oplus_voocphy_turn_off_fastchg(void);
 int oplus_voocphy_get_cp_enable(void);
 int oplus_voocphy_set_ufcs_enable(bool enable);
+bool oplus_voocphy_get_vbatt_ovp_status(void);
 #endif /* _OPLUS_VOOCPHY_H_ */

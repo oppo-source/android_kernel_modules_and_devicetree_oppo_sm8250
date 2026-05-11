@@ -1608,13 +1608,10 @@ void tp_goto_sleep_ftm(void)
 
     if(idev != NULL && idev->ts != NULL) {
         TPD_INFO("idev->ts->boot_mode = %d\n", idev->ts->boot_mode);
-#ifdef CONFIG_TOUCHPANEL_MTK_PLATFORM
-        if ((idev->ts->boot_mode == META_BOOT || idev->ts->boot_mode == FACTORY_BOOT)){
-#else
+
         if ((idev->ts->boot_mode == MSM_BOOT_MODE__FACTORY
              || idev->ts->boot_mode == MSM_BOOT_MODE__RF
              || idev->ts->boot_mode == MSM_BOOT_MODE__WLAN)) {
-#endif
             mutex_lock(&idev->touch_mutex);
             idev->actual_tp_mode = P5_X_FW_DEMO_MODE;
             ret = ilitek_tddi_fw_upgrade();
@@ -2922,7 +2919,7 @@ int __maybe_unused ilitek_platform_probe(struct spi_device *spi)
 
     }
     /*for gesture ws*/
-    idev->gesture_process_ws = wakeup_source_register(ts->dev,"gesture_wake_lock");
+    idev->gesture_process_ws = wakeup_source_register("gesture_wake_lock");
     if (!idev->gesture_process_ws) {
         TPD_INFO("gesture_process_ws request failed\n");
         ret = -EIO;
@@ -2932,15 +2929,10 @@ int __maybe_unused ilitek_platform_probe(struct spi_device *spi)
     return 0;
 
 abnormal_register_driver:
-
-#ifdef CONFIG_TOUCHPANEL_MTK_PLATFORM
-    if ((ts->boot_mode == META_BOOT || ts->boot_mode == FACTORY_BOOT)){
-#else
     if ((ts->boot_mode == MSM_BOOT_MODE__FACTORY
          || ts->boot_mode == MSM_BOOT_MODE__RF
          || ts->boot_mode == MSM_BOOT_MODE__WLAN)) {
-#endif
-        idev->gesture_process_ws = wakeup_source_register(ts->dev,"gesture_wake_lock");
+        idev->gesture_process_ws = wakeup_source_register("gesture_wake_lock");
         TPD_INFO("ftm mode probe end ok\n");
         return 0;
     }
@@ -2970,103 +2962,3 @@ int __maybe_unused ilitek_platform_remove(struct spi_device *spi)
     return 0;
 }
 
-static int ilitek_spi_resume(struct device *dev)
-{
-    struct touchpanel_data *ts = dev_get_drvdata(dev);
-
-    TPD_INFO("%s is called\n", __func__);
-
-#ifdef CONFIG_TOUCHPANEL_MTK_PLATFORM
-    if ((ts->boot_mode == META_BOOT || ts->boot_mode == FACTORY_BOOT)){
-#else
-    if ((ts->boot_mode == MSM_BOOT_MODE__FACTORY
-         || ts->boot_mode == MSM_BOOT_MODE__RF
-         || ts->boot_mode == MSM_BOOT_MODE__WLAN)) {
-#endif
-        TPD_INFO("ilitek_spi_resume do nothing in ftm\n");
-        return 0;
-    }
-
-    tp_i2c_resume(ts);
-
-    return 0;
-}
-
-static int ilitek_spi_suspend(struct device *dev)
-{
-    struct touchpanel_data *ts = dev_get_drvdata(dev);
-
-    TPD_INFO("%s: is called\n", __func__);
-#ifdef CONFIG_TOUCHPANEL_MTK_PLATFORM
-    if ((ts->boot_mode == META_BOOT || ts->boot_mode == FACTORY_BOOT)){
-#else
-    if ((ts->boot_mode == MSM_BOOT_MODE__FACTORY
-         || ts->boot_mode == MSM_BOOT_MODE__RF
-         || ts->boot_mode == MSM_BOOT_MODE__WLAN)) {
-#endif
-        TPD_INFO("ilitek_spi_suspend do nothing in ftm\n");
-        return 0;
-    }
-    tp_i2c_suspend(ts);
-
-    return 0;
-}
-
-static const struct dev_pm_ops tp_pm_ops = {
-    .suspend = ilitek_spi_suspend,
-    .resume = ilitek_spi_resume,
-};
-
-/*
- * The name in the table must match the definiation
- * in a dts file.
- *
- */
-static struct of_device_id tp_match_table[] = {
-#ifdef CONFIG_TOUCHPANEL_MULTI_NOFLASH
-    { .compatible = "oplus,tp_noflash",},
-#else
-    {.compatible = DTS_OF_NAME},
-#endif
-    {},
-};
-
-static struct spi_driver tp_spi_driver = {
-    .driver = {
-        .name    = DEVICE_ID,
-        .owner = THIS_MODULE,
-        .of_match_table = tp_match_table,
-        .pm = &tp_pm_ops,
-    },
-    .probe = ilitek_platform_probe,
-    .remove = ilitek_platform_remove,
-};
-
-static int __init tp_driver_init_ili_9881h(void)
-{
-    int res = 0;
-
-    TPD_INFO("%s is called\n", __func__);
-    if (!tp_judge_ic_match(TPD_DEVICE)) {
-        TPD_INFO("TP driver is already register\n");
-        return -1;
-    }
-    res = spi_register_driver(&tp_spi_driver);
-    if (res < 0) {
-        TPD_INFO("Failed to add spi driver\n");
-        return -ENODEV;
-    }
-
-    TPD_INFO("Succeed to add driver\n");
-    return res;
-}
-
-static void __exit tp_driver_exit_ili_9881h(void)
-{
-    spi_unregister_driver(&tp_spi_driver);
-}
-
-module_init(tp_driver_init_ili_9881h);
-module_exit(tp_driver_exit_ili_9881h);
-MODULE_AUTHOR("ILITEK");
-MODULE_LICENSE("GPL");

@@ -222,6 +222,15 @@ struct oplus_vooc_chip {
 
 	struct power_supply *batt_psy;
 	struct power_supply *usb_psy;
+
+	int current_full_limit;
+	int pre_ap_current_limit;
+	bool full_limit_curr_trigger;
+	int vooc_1time_full_volt;
+	int vooc_ntime_full_volt;
+	int notify_allow_reading_iic_cnt;
+	int ask_current;
+
 	int pcb_version;
 	bool allow_reading;
 	bool fastchg_started;
@@ -258,6 +267,7 @@ struct oplus_vooc_chip {
 #ifndef CONFIG_DISABLE_OPLUS_FUNCTION
 	struct manufacture_info manufacture_info;
 #endif
+
 	bool vooc_fw_update_newmethod;
 	char *fw_path;
 	struct mutex pinctrl_mutex;
@@ -452,6 +462,7 @@ bool oplus_vooc_wake_fastchg_work(struct oplus_vooc_chip *chip);
 void oplus_vooc_print_log(void);
 void oplus_vooc_switch_mode(int mode);
 bool oplus_vooc_get_allow_reading(void);
+void oplus_vooc_set_allow_reading(bool state);
 bool oplus_vooc_get_fastchg_started(void);
 bool oplus_vooc_get_fastchg_ing(void);
 bool oplus_vooc_get_fastchg_allow(void);

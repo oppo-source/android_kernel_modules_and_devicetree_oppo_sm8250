@@ -10,8 +10,8 @@
 #include <linux/types.h>
 #include <linux/io.h>
 #ifdef CONFIG_TRUSTONIC_TEE_SUPPORT
-/*#include <mobicore_driver_api.h>
-#include <tlspi_Api.h>*/
+#include <mobicore_driver_api.h>
+#include <tlspi_Api.h>
 #endif
 /*******************************************************************************
 * define struct for spi driver

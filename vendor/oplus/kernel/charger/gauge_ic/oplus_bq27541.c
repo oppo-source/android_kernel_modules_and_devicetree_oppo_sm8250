@@ -92,6 +92,7 @@ static int bq27411_write_soc_smooth_parameter(struct chip_bq27541 *chip, bool is
 static int zy0603_unseal(struct chip_bq27541 *chip, u32 key);
 static int zy0603_seal(struct chip_bq27541 *chip, u32 key);
 static bool zy0603_afi_update_done(void);
+static int bq27541_track_upload_mode_info(struct chip_bq27541 *chip);
 
 #define GAUGE_READ_ERR 0x01
 #define GAUGE_WRITE_ERR 0x02
@@ -734,6 +735,48 @@ int zy0603_reset_rc_sfr(void)
 		return 1;
 }
 EXPORT_SYMBOL(zy0603_reset_rc_sfr);
+
+static void zy0602_cal_model_check(bool ffc_state)
+{
+	struct chip_bq27541 *chip = gauge_ic;
+	int ret;
+
+	if (!chip || chip->device_type != DEVICE_ZY0602)
+		return;
+	if (atomic_read(&chip->shutdown) == 1)
+		return;
+
+	pr_info("zy0602_cal_model_check,ffc:%d\n", ffc_state);
+
+	if (ffc_state == false)
+		fg_gauge_calibrate_board(chip);
+	ret = fg_gauge_check_cell_model(chip, DTSI_MODEL_NAME);
+	if (ret > 0)
+		ret = fg_gauge_restore_cell_model(chip, DTSI_MODEL_NAME);
+	fg_gauge_check_por_soc(chip);
+
+	bq27541_track_upload_mode_info(chip);
+}
+
+static void sub_zy0602_cal_model_check(bool ffc_state)
+{
+	struct chip_bq27541 *chip = sub_gauge_ic;
+	int ret;
+
+	if (!chip || chip->device_type != DEVICE_ZY0602)
+		return;
+
+	pr_info("zy0602_cal_model_check,ffc:%d\n", ffc_state);
+
+	if (ffc_state == false)
+		fg_gauge_calibrate_board(chip);
+	ret = fg_gauge_check_cell_model(chip, DTSI_MODEL_NAME);
+	if (ret > 0)
+		ret = fg_gauge_restore_cell_model(chip, DTSI_MODEL_NAME);
+	fg_gauge_check_por_soc(chip);
+
+	bq27541_track_upload_mode_info(chip);
+}
 
 /* OPLUS 2021-06-20 Add begin for zy0603 bad battery. */
 static int zy0603_start_checksum_cal(struct chip_bq27541 *chip)
@@ -1464,7 +1507,7 @@ static int bq27541_get_battery_cc(void) /*  sjc20150105  */
 		ret = bq27541_read_i2c(gauge_ic, gauge_ic->cmd_addr.reg_cc, &cc);
 		if (ret) {
 			dev_err(gauge_ic->dev, "error reading cc.\n");
-			return ret;
+			return 0;
 		}
 	} else {
 		if (gauge_ic->cc_pre) {
@@ -1492,7 +1535,7 @@ static int bq27541_get_sub_battery_cc(void)
 		ret = bq27541_read_i2c(sub_gauge_ic, sub_gauge_ic->cmd_addr.reg_cc, &cc);
 		if (ret) {
 			dev_err(sub_gauge_ic->dev, "error reading cc.\n");
-			return ret;
+			return 0;
 		}
 	} else {
 		if (sub_gauge_ic->cc_pre) {
@@ -1503,6 +1546,142 @@ static int bq27541_get_sub_battery_cc(void)
 	}
 	sub_gauge_ic->cc_pre = cc;
 	return cc;
+}
+
+static u8 bq27541_calc_checksum(u8 *buf, int len)
+{
+	u8 checksum = 0;
+
+	while (len--)
+		checksum += buf[len];
+
+	return 0xff - checksum;
+}
+
+static int bq27541_block_check_conditions(struct chip_bq27541 *chip, u8 *buf, int len, int offset, bool do_checksum)
+{
+	if (!chip || !buf || (offset < 0) || (offset >= BQ27541_BLOCK_SIZE) || (len <= 0) ||
+	    (len + do_checksum > BQ27541_BLOCK_SIZE) || (offset + len + do_checksum > BQ27541_BLOCK_SIZE)) {
+		chg_err("%soffset %d or len %d invalid\n", buf ? "buf is null or " : "", offset, len);
+		return -EINVAL;
+	}
+
+	if (atomic_read(&chip->suspended) == 1 || atomic_read(&chip->gauge_i2c_status))
+		return -EINVAL;
+
+	return 0;
+}
+
+int bq27541_read_block(struct chip_bq27541 *chip, int addr, u8 *buf, int len, int offset, bool do_checksum)
+{
+	int ret;
+	int data_check;
+	int try_count = GAUGE_SUBCMD_TRY_COUNT;
+	u8 extend_data[BQ28Z610_EXTEND_DATA_SIZE] = { 0 };
+	u8 checksum = 0;
+
+	ret = bq27541_block_check_conditions(chip, buf, len, offset, do_checksum);
+	if (ret < 0)
+		return ret;
+
+try:
+	mutex_lock(&chip->bq28z610_alt_manufacturer_access);
+	ret = bq27541_i2c_txsubcmd(chip, GAUGE_EXTERN_DATAFLASHBLOCK, addr);
+	if (ret < 0)
+		goto error;
+	usleep_range(1000, 1000);
+	ret = bq27541_read_i2c_block(chip, GAUGE_EXTERN_DATAFLASHBLOCK, (offset + len + do_checksum + 2), extend_data);
+	if (ret < 0)
+		goto error;
+
+	data_check = (extend_data[1] << 0x8) | extend_data[0];
+	if (try_count-- > 0 && data_check != addr) {
+		chg_err("0x%04x not match. try_count=%d extend_data[0]=0x%2x, extend_data[1]=0x%2x\n", addr, try_count,
+			extend_data[0], extend_data[1]);
+		mutex_unlock(&chip->bq28z610_alt_manufacturer_access);
+		usleep_range(2000, 2000);
+		goto try;
+	}
+	if (data_check != addr)
+		goto error;
+
+	if (do_checksum) {
+		checksum = bq27541_calc_checksum(&extend_data[offset + 2], len);
+		if (checksum != extend_data[offset + len + 2]) {
+			chg_err("[%*ph]checksum not match. expect=0x%02x actual=0x%02x\n",
+				offset + len + do_checksum + 2, extend_data, checksum, extend_data[offset + len + 2]);
+			goto error;
+		}
+	}
+
+	memcpy(buf, &extend_data[offset + 2], len);
+	chg_info("addr=0x%04x offset=%d buf=[%*ph] do_checksum=%d read success\n", addr, offset, len, buf, do_checksum);
+	mutex_unlock(&chip->bq28z610_alt_manufacturer_access);
+	return 0;
+
+error:
+	chg_info("addr=0x%04x offset=%d buf=[%*ph] do_checksum=%d read fail\n", addr, offset, len, buf, do_checksum);
+	mutex_unlock(&chip->bq28z610_alt_manufacturer_access);
+	return -EINVAL;
+}
+
+static int bq28z610_get_true_fcc(struct chip_bq27541 *chip, int *true_fcc)
+{
+	int ret;
+	u8 buf[BQ28Z610_TRUE_FCC_NUM_SIZE] = { 0 };
+
+	if (!chip || !true_fcc)
+		return -EINVAL;
+
+	ret = bq27541_read_block(
+		chip, BQ28Z610_REG_TRUE_FCC, buf, BQ28Z610_TRUE_FCC_NUM_SIZE, BQ28Z610_TRUE_FCC_OFFSET, false);
+	if (ret < 0)
+		return ret;
+
+	*true_fcc = (buf[1] << 8) | buf[0];
+	chg_info("true_fcc=%d\n", *true_fcc);
+
+	return ret;
+}
+
+static void bq28z610_set_fcc_sync(struct chip_bq27541 *chip)
+{
+	mutex_lock(&chip->bq28z610_alt_manufacturer_access);
+	bq27541_i2c_txsubcmd(chip, BQ28Z610_REG_CNTL1, BQ28Z610_FCC_SYNC_CMD);
+	mutex_unlock(&chip->bq28z610_alt_manufacturer_access);
+	chg_info("set fcc sync\n");
+}
+
+static void bq27541_fcc_too_small_check_work(struct work_struct *work)
+{
+	int ret;
+	int true_fcc = 0;
+	struct chip_bq27541 *chip = container_of(
+		work, struct chip_bq27541, fcc_too_small_check_work);
+
+	ret = bq28z610_get_true_fcc(chip, &true_fcc);
+	if (!ret && (true_fcc > 200)) /* TODO: true_fcc value is more than 200 */
+		bq28z610_set_fcc_sync(chip);
+
+	chip->fcc_too_small_checking = false;
+}
+
+static void bq27541_fcc_too_small_check(struct chip_bq27541 *chip, int fcc)
+{
+	if (!chip)
+		return;
+	if (chip->batt_bq28z610 && !chip->batt_zy0603) {
+		if (chip->fcc_too_small_checking) {
+			chg_info("fcc too small checking, ignore this time");
+			return;
+		}
+
+		/* TODO: fcc value is less than 200 */
+		if (fcc < 200) {
+			chip->fcc_too_small_checking = true;
+			schedule_work(&chip->fcc_too_small_check_work);
+		}
+	}
 }
 
 static int bq27541_get_battery_fcc(void) /*  sjc20150105  */
@@ -1530,6 +1709,8 @@ static int bq27541_get_battery_fcc(void) /*  sjc20150105  */
 		}
 	}
 	gauge_ic->fcc_pre = fcc;
+	bq27541_fcc_too_small_check(gauge_ic, fcc);
+
 	return fcc;
 }
 
@@ -1558,6 +1739,8 @@ static int bq27541_get_sub_gauge_battery_fcc(void)
 		}
 	}
 	sub_gauge_ic->fcc_pre = fcc;
+	bq27541_fcc_too_small_check(sub_gauge_ic, fcc);
+
 	return fcc;
 }
 
@@ -2764,7 +2947,7 @@ static int bq27541_get_battery_soh(void) /*  sjc20150105  */
 
 		if (ret || (ret_q < 0)) {
 			dev_err(gauge_ic->dev, "error reading soh.\n");
-			return ret;
+			return 0;
 		}
 		sh366002_read_gaugeinfo_block(gauge_ic);
 	} else {
@@ -2804,7 +2987,7 @@ static int bq27541_get_sub_battery_soh(void)
 
 		if (ret || (ret_q < 0)) {
 			dev_err(sub_gauge_ic->dev, "error reading soh.\n");
-			return ret;
+			return 0;
 		}
 		sh366002_read_gaugeinfo_block(sub_gauge_ic);
 	} else {
@@ -3894,6 +4077,7 @@ static struct oplus_gauge_operations bq27541_gauge_ops = {
 	.get_prev_bcc_parameters = bq28z610_get_prev_battery_bcc_parameters,
 	.check_rc_sfr = zy0603_check_rc_sfr,
 	.soft_reset_rc_sfr = zy0603_reset_rc_sfr,
+	.cal_model_check = zy0602_cal_model_check,
 };
 
 static struct oplus_gauge_operations bq27541_sub_gauge_ops = {
@@ -3912,6 +4096,7 @@ static struct oplus_gauge_operations bq27541_sub_gauge_ops = {
 	.get_prev_batt_remaining_capacity = bq27541_get_sub_gauge_prev_batt_remaining_capacity,
 	.get_battery_authenticate = bq27541_get_sub_battery_authenticate,
 	.update_soc_smooth_parameter = bq28z610_update_sub_soc_smooth_parameter,
+	.cal_model_check = sub_zy0602_cal_model_check,
 	/*	.get_battery_hmac = bq27541_get_battery_hmac,
 	.set_battery_full = bq27541_set_battery_full,
 	.get_gauge_i2c_err = bq27541_get_gauge_i2c_err,
@@ -4064,6 +4249,22 @@ static void gauge_set_cmd_addr(struct chip_bq27541 *chip, int device_type)
 	}
 }
 
+static void oplus_set_device_name(struct chip_bq27541 *chip, int device_type)
+{
+	if (device_type == DEVICE_TYPE_BQ27541)
+		strncpy(chip->device_name, "bq27541", DEVICE_NAME_LEN);
+	else if (device_type == DEVICE_TYPE_BQ27411)
+		strncpy(chip->device_name, "bq27411", DEVICE_NAME_LEN);
+	else if (device_type == DEVICE_TYPE_BQ28Z610)
+		strncpy(chip->device_name, "bq28z610", DEVICE_NAME_LEN);
+	else if (device_type == DEVICE_TYPE_ZY0602)
+		strncpy(chip->device_name, "zy0602", DEVICE_NAME_LEN);
+	else if (device_type == DEVICE_TYPE_ZY0603)
+		strncpy(chip->device_name, "zy0603", DEVICE_NAME_LEN);
+	else
+		strncpy(chip->device_name, "other", DEVICE_NAME_LEN);
+}
+
 static void bq27541_hw_config(struct chip_bq27541 *chip)
 {
 	int ret = 0;
@@ -4074,6 +4275,15 @@ static void bq27541_hw_config(struct chip_bq27541 *chip)
 #ifdef OPLUS_CUSTOM_OP_DEF
 	exfg_information_register(&bq27541_gauge_ops);
 #endif
+	if (chip->gauge_fix_cadc) {
+		bq27541_read_i2c(chip, ZY602_FW_CHECK_CMD, &flags);
+		if (flags == ZY602_FW_CHECK_ERROR) {
+			device_type = DEVICE_TYPE_ZY0602;
+			pr_err("i2c error,force the 0602 type\n");
+			goto device_type_set;
+		}
+		udelay(66);
+	}
 	bq27541_cntl_cmd(chip, BQ27541_BQ27411_SUBCMD_CTNL_STATUS);
 	udelay(66);
 	bq27541_read_i2c(chip, BQ27541_BQ27411_REG_CNTL, &flags);
@@ -4097,6 +4307,7 @@ static void bq27541_hw_config(struct chip_bq27541 *chip)
 	udelay(66);
 	bq27541_read_i2c(chip, BQ27541_BQ27411_REG_CNTL, &fw_ver);
 
+device_type_set:
 	if (device_type == DEVICE_TYPE_BQ27411) {
 		chip->device_type = DEVICE_BQ27411;
 		chip->device_type_for_vooc = DEVICE_TYPE_FOR_VOOC_BQ27411;
@@ -4120,6 +4331,7 @@ static void bq27541_hw_config(struct chip_bq27541 *chip)
 		chip->cmd_addr.reg_ai = Bq28Z610_REG_TI;
 	}
 	oplus_set_fg_device_type(chip->device_type);
+	oplus_set_device_name(chip, device_type);
 	dev_err(chip->dev, "DEVICE_TYPE is 0x%02X, FIRMWARE_VERSION is 0x%02X batt_zy0603 = %d\n", device_type, fw_ver,
 		chip->batt_zy0603);
 }
@@ -4137,6 +4349,13 @@ static void bq27541_parse_dt(struct chip_bq27541 *chip)
 	/* only for wite battery full param in guage dirver probe on 7250 platform */
 	chip->battery_full_param = of_property_read_bool(node, "qcom,battery-full-param");
 	chip->b_soft_reset_for_zy = of_property_read_bool(node, "zy,b_soft_reset_for_zy");
+
+	/* for zy sh366002 current and model mix patch */
+	chip->gauge_fix_cadc = of_property_read_bool(node, "zy,gauge-fix-cadc");
+	chip->gauge_cal_board = of_property_read_bool(node, "zy,gauge-cal-board");
+	chip->gauge_check_model = of_property_read_bool(node, "zy,gauge-check-model");
+	chip->gauge_check_por = of_property_read_bool(node, "zy,gauge-check-por");
+
 	rc = of_property_read_u32(node, "qcom,gauge_num", &chip->gauge_num);
 	if (rc) {
 		chip->gauge_num = 0;
@@ -5056,6 +5275,7 @@ static int bq27411_modify_soc_smooth_parameter(struct chip_bq27541 *chip, bool i
 	int rc = 0;
 	bool check_result = false;
 	bool tried_again = false;
+	int flags = 0;
 
 	if (chip->batt_zy0603 && is_powerup == true) {
 		pr_err("%s batt_zy0603 begin\n", __func__);
@@ -5076,6 +5296,11 @@ static int bq27411_modify_soc_smooth_parameter(struct chip_bq27541 *chip, bool i
 		pr_err("%s  DEVICE_ZY0602 begin\n", __func__);
 		pr_err("%s  device_type = %d enable_sleep_mode=%d\n", __func__,
 			chip->device_type, chip->enable_sleep_mode);
+		bq27541_read_i2c(chip, ZY602_FW_CHECK_CMD, &flags);
+		if (flags == ZY602_FW_CHECK_ERROR) {
+			pr_err("on ipa mode,not need do sleep_mode\n");
+			return GAUGE_OK;
+		}
 		if (chip->enable_sleep_mode)
 			bq27411_write_soc_smooth_parameter_for_zy(chip, false);
 		else
@@ -6053,7 +6278,13 @@ static void bq27541_reset(struct i2c_client *client_chip)
 	if (IS_ERR_OR_NULL(bq27541_chip))
 		return;
 
+	atomic_set(&bq27541_chip->shutdown, 1);
 	gauge_chip = bq27541_chip->oplus_gauge;
+
+	if (bq27541_chip->track_mode.mode_check_buf) {
+		kfree(bq27541_chip->track_mode.mode_check_buf);
+		bq27541_chip->track_mode.mode_check_buf = NULL;
+	}
 
 	if (bq27541_chip->batt_zy0603) {
 		return;
@@ -6080,8 +6311,11 @@ static void bq27541_reset(struct i2c_client *client_chip)
 		}
 		msleep(150);
 		chg_debug("bq27541_reset, point = %d\r\n", gauge_chip->gauge_ops->get_battery_soc());
-	} else {
-		bq27411_modify_soc_smooth_parameter(bq27541_chip, false);
+	} else if (bq27541_chip) {
+		if ((bq27541_chip->device_type == DEVICE_ZY0602) && (bq27541_chip->gauge_fix_cadc))
+			fg_gauge_enable_sleep_mode(bq27541_chip);
+		else
+			bq27411_modify_soc_smooth_parameter(bq27541_chip, false);
 	}
 }
 
@@ -6205,6 +6439,127 @@ static void oplus_extern_auth_test_func(struct work_struct *work)
 	}
 }
 
+static int bq27541_track_upload_mode_info(struct chip_bq27541 *chip)
+{
+	int index = 0;
+	struct gauge_track_mode_info *p_track_mode;
+
+	if (!chip)
+		return -EINVAL;
+
+	if (!chip->gauge_cal_board && !chip->gauge_check_model && !chip->gauge_check_por)
+		return -EINVAL;
+
+	p_track_mode = &chip->track_mode;
+	if (!p_track_mode->track_init_done || !p_track_mode->mode_check_buf)
+		return -EINVAL;
+
+	if (!strlen(p_track_mode->mode_check_buf))
+		return -EINVAL;
+
+	mutex_lock(&p_track_mode->track_lock);
+	if (p_track_mode->uploading) {
+		pr_info("uploading, should return\n");
+		mutex_unlock(&p_track_mode->track_lock);
+		goto no_upload;
+	}
+
+	if (p_track_mode->load_trigger)
+		kfree(p_track_mode->load_trigger);
+	p_track_mode->load_trigger = kzalloc(sizeof(oplus_chg_track_trigger), GFP_KERNEL);
+	if (!p_track_mode->load_trigger) {
+		pr_err("gauge load_trigger memery alloc fail\n");
+		mutex_unlock(&p_track_mode->track_lock);
+		goto no_upload;
+	}
+
+	p_track_mode->load_trigger->type_reason = TRACK_NOTIFY_TYPE_GENERAL_RECORD;
+	p_track_mode->load_trigger->flag_reason = TRACK_NOTIFY_FLAG_GAUGE_MODE;
+	p_track_mode->uploading = true;
+	mutex_unlock(&p_track_mode->track_lock);
+
+	if(chip->capacity_pct == 0) {
+		index += snprintf(&(p_track_mode->load_trigger->crux_info[index]), OPLUS_CHG_TRACK_CURX_INFO_LEN - index,
+				"$$device_id@@%s", chip->device_name);
+	} else {
+		index += snprintf(&(p_track_mode->load_trigger->crux_info[index]), OPLUS_CHG_TRACK_CURX_INFO_LEN - index,
+				"$$device_id@@%s_%d", chip->device_name, chip->gauge_num);
+	}
+	if (p_track_mode->mode_check_buf) {
+		index += snprintf(&(p_track_mode->load_trigger->crux_info[index]), OPLUS_CHG_TRACK_CURX_INFO_LEN - index,
+			"%s", p_track_mode->mode_check_buf);
+		mutex_lock(&p_track_mode->buf_lock);
+		memset(p_track_mode->mode_check_buf, 0, MODE_CHECK_MAX_LENGTH);
+		mutex_unlock(&p_track_mode->buf_lock);
+	}
+
+	schedule_delayed_work(&p_track_mode->load_trigger_work, 0);
+	pr_debug("success\n");
+	return 0;
+
+no_upload:
+	if (p_track_mode->mode_check_buf) {
+		mutex_lock(&p_track_mode->buf_lock);
+		memset(p_track_mode->mode_check_buf, 0, MODE_CHECK_MAX_LENGTH);
+		mutex_unlock(&p_track_mode->buf_lock);
+	}
+	return -EFAULT;
+}
+
+static void bq27541_track_mode_load_trigger_work(
+	struct work_struct *work)
+{
+	struct delayed_work *dwork = to_delayed_work(work);
+	struct chip_bq27541 *chip =
+		container_of(dwork, struct chip_bq27541, track_mode.load_trigger_work);
+
+	if (!chip->track_mode.load_trigger)
+		return;
+
+	oplus_chg_track_upload_trigger_data(*(chip->track_mode.load_trigger));
+	kfree(chip->track_mode.load_trigger);
+	chip->track_mode.load_trigger = NULL;
+	chip->track_mode.uploading = false;
+}
+
+int bq27541_track_update_mode_buf(struct chip_bq27541 *chip, char *buf)
+{
+	int str_len;
+
+	if (!chip || !chip->track_mode.track_init_done ||
+			!buf || !chip->track_mode.mode_check_buf)
+		return -EFAULT;
+
+	mutex_lock(&chip->track_mode.buf_lock);
+	str_len = strlen(chip->track_mode.mode_check_buf);
+	if (str_len >= MODE_CHECK_MAX_LENGTH) {
+		mutex_unlock(&chip->track_mode.buf_lock);
+		pr_info("mode_check_buf arrive max\n");
+		return -EFAULT;
+	}
+	pr_info("str_len=%d, len=%d, %s\n", str_len, strlen(buf), buf);
+	snprintf(&(chip->track_mode.mode_check_buf[str_len]), MODE_CHECK_MAX_LENGTH - str_len - 1, "%s", buf);
+	mutex_unlock(&chip->track_mode.buf_lock);
+	return 0;
+}
+
+static int bq27541_track_init(struct chip_bq27541 *chip)
+{
+	if (!chip)
+		return -EFAULT;
+
+	chip->track_mode.mode_check_buf = kzalloc(MODE_CHECK_MAX_LENGTH, GFP_KERNEL);
+	if (!chip->track_mode.mode_check_buf)
+		return -ENOMEM;
+	mutex_init(&chip->track_mode.track_lock);
+	mutex_init(&chip->track_mode.buf_lock);
+	INIT_DELAYED_WORK(&chip->track_mode.load_trigger_work,
+		bq27541_track_mode_load_trigger_work);
+	chip->track_mode.track_init_done = true;
+
+	return 0;
+}
+
 static int bq27541_driver_probe(struct i2c_client *client, const struct i2c_device_id *id)
 {
 	struct chip_bq27541 *fg_ic;
@@ -6222,6 +6577,7 @@ static int bq27541_driver_probe(struct i2c_client *client, const struct i2c_devi
 	fg_ic->dev = &client->dev;
 	fg_ic->client = client;
 	atomic_set(&fg_ic->suspended, 0);
+	atomic_set(&fg_ic->shutdown, 0);
 	mutex_init(&fg_ic->chip_mutex);
 	mutex_init(&fg_ic->bq28z610_alt_manufacturer_access);
 	bq27541_parse_dt(fg_ic);
@@ -6234,6 +6590,7 @@ rerun:
 	rerun_num--;
 	bq27541_hw_config(fg_ic);
 
+	INIT_WORK(&fg_ic->fcc_too_small_check_work, bq27541_fcc_too_small_check_work);
 	if (fg_ic->batt_zy0603) {
 		rc = zy0603_parse_afi_buf(fg_ic);
 		dev_err(&client->dev, "zy0603 support and can't config gauge param\n");
@@ -6367,6 +6724,8 @@ rerun:
 			oplus_external_auth_init(external_auth_chip);
 		}
 	}
+
+	bq27541_track_init(fg_ic);
 
 	chg_debug("bq27541_driver_probe success\n");
 	return 0;

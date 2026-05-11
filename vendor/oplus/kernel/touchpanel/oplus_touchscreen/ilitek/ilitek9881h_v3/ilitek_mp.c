@@ -2608,11 +2608,7 @@ static int dev_mkdir(char *name, umode_t mode)
     TPD_INFO("mkdir: %s\n", name);
     fs = get_fs();
     set_fs(KERNEL_DS);
-#ifdef CONFIG_ARCH_HAS_SYSCALL_WRAPPER
-    err = ksys_mkdir(name, 0666);
-#else
     err = sys_mkdir(name, 0666);
-#endif
     set_fs(fs);
     return err;
 }

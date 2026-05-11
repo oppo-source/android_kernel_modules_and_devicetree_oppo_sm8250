@@ -111,65 +111,16 @@ enum GESTURE_ID {
     GESTURE_HEART_CLOCKWISE = 0x59,
 };
 
-/*******Pinctrl config for egpio active and suspend*******/
-
-int fts_pinctrl_select_active(struct fts_ts_data *fts_data)
-{
-	int ret = 0;
-
-	if (fts_data->hw_res->pinctrl && fts_data->hw_res->pin_set_reset_high) {
-		ret = pinctrl_select_state(fts_data->hw_res->pinctrl, fts_data->hw_res->pin_set_reset_high);
-		TPD_INFO("%s : ret = %d\n", __func__, ret);
-		if (ret < 0) {
-			TPD_INFO("Set active pin state error:%d", ret);
-			devm_pinctrl_put(fts_data->hw_res->pinctrl);
-			fts_data->hw_res->pinctrl = NULL;
-		}
-	}
-
-	return ret;
-}
-
-int fts_pinctrl_select_suspend(struct fts_ts_data *fts_data)
-{
-	int ret = 0;
-
-	if (fts_data->hw_res->pinctrl && fts_data->hw_res->pin_set_reset_low) {
-		ret = pinctrl_select_state(fts_data->hw_res->pinctrl , fts_data->hw_res->pin_set_reset_low);
-		TPD_INFO("%s : ret = %d\n", __func__, ret);
-		if (ret < 0) {
-			TPD_INFO("Set suspend pin state error:%d", ret);
-			devm_pinctrl_put(fts_data->hw_res->pinctrl);
-			fts_data->hw_res->pinctrl = NULL;
-		}
-	}
-
-	return ret;
-}
-
 /*******Part1:Call Back Function implement*******/
-static void fts_read_fod_info(struct fts_ts_data *ts_data);
-static int fts_get_gesture_info(void *chip_data, struct gesture_info *gesture);
-
-
 
 static int fts_rstgpio_set(struct hw_resource *hw_res, bool on)
 {
-	if (fts_data->need_pinctrl_pull_up_reset) {
-		if (on == true) {
-			fts_pinctrl_select_active(fts_data);
-		} else {
-			fts_pinctrl_select_suspend(fts_data);
-		}
-	} else {
-		if (gpio_is_valid(hw_res->reset_gpio)) {
-			TPD_INFO("Set the reset_gpio \n");
-			gpio_direction_output(hw_res->reset_gpio, on);
-		} else {
-			TPD_INFO("reset is invalid!!\n");
-		}
-	}
-
+    if (gpio_is_valid(hw_res->reset_gpio)) {
+        TPD_INFO("Set the reset_gpio \n");
+        gpio_direction_output(hw_res->reset_gpio, on);
+    } else {
+        TPD_INFO("reset is invalid!!\n");
+    }
     return 0;
 }
 
@@ -710,9 +661,6 @@ static int fts_get_rawdata(struct fts_ts_data *ts_data, int *raw, bool is_diff, 
         byte_num = ts_data->hw_res->TX_NUM * ts_data->hw_res->RX_NUM * 2;
     } else {
         byte_num = (ts_data->hw_res->TX_NUM + ts_data->hw_res->RX_NUM) * 2;
-	if (byte_num < MAX_PACKET_SIZE) {
-		byte_num = MAX_PACKET_SIZE;
-	}
     }
 
     /*kzalloc buffer*/
@@ -763,7 +711,7 @@ static int fts_get_rawdata(struct fts_ts_data *ts_data, int *raw, bool is_diff, 
     }
 
     raw_addr = FACTORY_REG_RAWDATA_ADDR_MC_SC;
-    ret = touch_i2c_read_block(ts_data->client, raw_addr, MAX_PACKET_SIZE, buf);
+	ret = touch_i2c_read_block(ts_data->client, raw_addr, byte_num > MAX_PACKET_SIZE ? MAX_PACKET_SIZE : byte_num, buf);
     size = byte_num - MAX_PACKET_SIZE;
     offset = MAX_PACKET_SIZE;
     while (size > 0) {
@@ -813,34 +761,15 @@ static void fts_delta_read(struct seq_file *s, void *chip_data)
     int *raw = NULL;
     int tx_num = ts_data->hw_res->TX_NUM;
     int rx_num = ts_data->hw_res->RX_NUM;
-	unsigned char pTmp[40] = {0};
-	unsigned char *Pstr = NULL;
-	int lsize = tx_num * rx_num;
 
     TPD_INFO("%s:start to read diff data", __func__);
     focal_esd_check_enable(ts_data, false);   //no allowed esd check
 
     raw = kzalloc(tx_num * rx_num * sizeof(int), GFP_KERNEL);
     if (!raw) {
-		if (s) {
-			seq_printf(s, "kzalloc for raw fail\n");
-		}
-		else {
-			TPD_INFO("kzalloc for raw fail\n");
-		}
+        seq_printf(s, "kzalloc for raw fail\n");
         goto raw_fail;
     }
-	if(s == NULL) {
-		TPD_INFO("start to read JCQ data: \n");
-		TPD_INFO("0xD0 = %d: \n", touch_i2c_read_byte(ts_data->client, 0xD0));
-		TPD_INFO("0x86 = %d: \n", touch_i2c_read_byte(ts_data->client, 0x86));
-		TPD_INFO("0xCF = %d: \n", touch_i2c_read_byte(ts_data->client, 0xCF));
-		fts_read_fod_info(ts_data);
-		fts_get_gesture_info(ts_data, NULL);
-		TPD_INFO("0x8F = %d: \n", touch_i2c_read_byte(ts_data->client, 0x8F));
-		TPD_INFO("0x91 = %d: \n", touch_i2c_read_byte(ts_data->client, 0x91));
-	}
-
 
     ret = touch_i2c_write_byte(ts_data->client, FTS_REG_AUTOCLB_ADDR, 0x01);
     if (ret < 0) {
@@ -849,48 +778,17 @@ static void fts_delta_read(struct seq_file *s, void *chip_data)
 
     ret = fts_get_rawdata(ts_data, raw, true, FTS_MUTUAL_CAP_DATA_DELTA);
     if (ret < 0) {
-		if (s) {
-			seq_printf(s, "get diff data fail\n");
-		}
-		else {
-			TPD_INFO("get diff data fail\n");
-		}
+        seq_printf(s, "get diff data fail\n");
         goto raw_fail;
     }
-    
-	TPD_INFO("now is reading delta\n");
-	if(s == NULL) {
-		Pstr = kzalloc(lsize * (sizeof(int)), GFP_KERNEL);
-	}
+
     for (i = 0; i < tx_num; i++) {
-		if (s) {
-			seq_printf(s, "\n[%2d]", i + 1);
-		}
-		else {
-			memset(Pstr, 0x0, lsize);
-			snprintf(pTmp, sizeof(pTmp), "[%2d]", i+1);
-			strncat(Pstr, pTmp, lsize);
-		}
+        seq_printf(s, "\n[%2d]", i + 1);
         for (j = 0; j < rx_num; j++) {
-			if (s) {
-				seq_printf(s, " %5d,", raw[i * rx_num + j]);
-			}
-			else {
-				snprintf(pTmp, sizeof(pTmp), " %5d", raw[i * rx_num + j]);
-				strncat(Pstr, pTmp, lsize);
-			}
-		}
-		if(s == NULL) {
-			TPD_INFO("%s\n", Pstr);
+            seq_printf(s, " %5d,", raw[i * rx_num + j]);
         }
     }
-	if (s) {
-		seq_printf(s, "\n");
-	}
-	else {
-		TPD_INFO("0x91 = %d: \n", touch_i2c_read_byte(ts_data->client, 0x91));
-		kfree(Pstr);
-	}
+    seq_printf(s, "\n");
 
 raw_fail:
     focal_esd_check_enable(ts_data, true);
@@ -1046,47 +944,46 @@ static void fts_main_register_read(struct seq_file *s, void *chip_data)
 }
 
 #define SET_FTS_GESTURE(state, state_flag, config, config_flag)\
-    if (CHK_BIT(state, (1 << state_flag))) {\
-        SET_BIT(config, (1 << config_flag));\
-    } else {\
-        CLR_BIT(config, (1 << config_flag));\
-    }
+	if (CHK_BIT(state, (1 << state_flag))) {\
+		SET_BIT(config, (1 << config_flag));\
+	} else {\
+		CLR_BIT(config, (1 << config_flag));\
+	}
 
 static int fts_enable_black_gesture(struct fts_ts_data *ts_data, bool enable)
 {
     int i = 0;
     int ret = 0;
-    int state = ts_data->gesture_state;
-
     int config1 = 0xff;
     int config2 = 0xff;
     int config4 = 0xff;
+	int state = ts_data->gesture_state;
 
-    if (ts_data->black_gesture_indep) {
-        if (enable) {
-            SET_FTS_GESTURE(state, Right2LeftSwip, config1, 0)
-            SET_FTS_GESTURE(state, Left2RightSwip, config1, 1)
-            SET_FTS_GESTURE(state, Down2UpSwip, config1, 2)
-            SET_FTS_GESTURE(state, Up2DownSwip, config1, 3)
-            SET_FTS_GESTURE(state, DouTap, config1, 4)
-            SET_FTS_GESTURE(state, DouSwip, config1, 5)
-            SET_FTS_GESTURE(state, Circle, config2, 0)
-            SET_FTS_GESTURE(state, Wgestrue, config2, 1)
-            SET_FTS_GESTURE(state, Mgestrue, config2, 2)
-            SET_FTS_GESTURE(state, RightVee, config4, 1)
-            SET_FTS_GESTURE(state, LeftVee, config4, 2)
-            SET_FTS_GESTURE(state, DownVee, config4, 3)
-            SET_FTS_GESTURE(state, UpVee, config4, 4)
-        } else {
-            config1 = 0;
-            config2 = 0;
-            config4 = 0;
-        }
-    }
-    TPD_INFO("MODE_GESTURE, write 0xD0=%d", enable);
-    TPD_INFO("MODE_GESTURE, config1=%x", config1);
-    TPD_INFO("MODE_GESTURE, config2=%x", config2);
-    TPD_INFO("MODE_GESTURE, config4=%x", config4);
+	if (ts_data->black_gesture_indep) {
+		if (enable) {
+			SET_FTS_GESTURE(state, Right2LeftSwip, config1, 0)
+			SET_FTS_GESTURE(state, Left2RightSwip, config1, 1)
+			SET_FTS_GESTURE(state, Down2UpSwip, config1, 2)
+			SET_FTS_GESTURE(state, Up2DownSwip, config1, 3)
+			SET_FTS_GESTURE(state, DouTap, config1, 4)
+			SET_FTS_GESTURE(state, DouSwip, config1, 5)
+			SET_FTS_GESTURE(state, SingleTap, config1, 7)
+			SET_FTS_GESTURE(state, Circle, config2, 0)
+			SET_FTS_GESTURE(state, Wgestrue, config2, 1)
+			SET_FTS_GESTURE(state, Mgestrue, config2, 2)
+			SET_FTS_GESTURE(state, RightVee, config4, 1)
+			SET_FTS_GESTURE(state, LeftVee, config4, 2)
+			SET_FTS_GESTURE(state, DownVee, config4, 3)
+			SET_FTS_GESTURE(state, UpVee, config4, 4)
+		} else {
+			config1 = 0;
+			config2 = 0;
+			config4 = 0;
+		}
+	}
+
+	TPD_INFO("MODE_GESTURE, write 0xD0=%d, config1=%x, config2=%x, config4=%x", enable, config1, config2, config4);
+
     if (enable) {
         for (i = 0; i < 5 ; i++) {
             ret = touch_i2c_write_byte(ts_data->client, FTS_REG_GESTURE_CONFIG1, config1);
@@ -1288,11 +1185,6 @@ static int fts_reset(void *chip_data)
     return 0;
 }
 
-int fts_rstpin_reset(void *chip_data)
-{
-	return fts_reset(chip_data);
-}
-
 static int  fts_reset_gpio_control(void *chip_data, bool enable)
 {
     struct fts_ts_data *ts_data = (struct fts_ts_data *)chip_data;
@@ -1459,6 +1351,10 @@ static u32 fts_u32_trigger_reason(void *chip_data, int gesture_enable, int is_su
     if (gesture_enable && is_suspended) {
         ret = touch_i2c_read_byte(ts_data->client, FTS_REG_GESTURE_EN);
         if (ret == 0x01) {
+                if (ts_data->read_buffer_support) {
+                        ret = touch_i2c_read_block(ts_data->client, cmd, FTS_POINTS_ONE, &buf[0]);
+                        TPD_DEBUG("touch_i2c_read_block FTS_POINTS_ONE add once");
+                }
             ret = touch_i2c_read_byte(ts_data->client, FTS_REG_POINTS_LB);
             return IRQ_GESTURE;
         }
@@ -1476,7 +1372,7 @@ static u32 fts_u32_trigger_reason(void *chip_data, int gesture_enable, int is_su
         return IRQ_IGNORE;
     }
 
-    if ((buf[0] == 0xFF) && (buf[1] == 0xFF) && (buf[2] == 0xFF) && (!is_suspended)) {
+    if ((buf[0] == 0xFF) && (buf[1] == 0xFF) && (buf[2] == 0xFF)) {
         TPD_INFO("Need recovery TP state");
         ret = touch_i2c_read_byte(ts_data->client, FTS_REG_POINTS_LB);
         return IRQ_FW_AUTO_RESET;
@@ -1592,20 +1488,20 @@ static int fts_get_touch_points(void *chip_data, struct point_info *points, int 
             points[pointid].z =  buf[6 + base];
             event_flag = (buf[2 + base] >> 6);
         } else if (ts_data->high_resolution_support_x8) {
-	    points[pointid].x = ((buf[2 + base] & 0x20) >> 5) +
-	                        ((buf[2 + base] & 0x0F) << 11) +
-	                        ((buf[3 + base] & 0xFF) << 3) +
-	                        ((buf[6 + base] & 0xC0) >> 5);
-	    points[pointid].y = ((buf[2 + base] & 0x10) >> 4) +
-		                ((buf[4 + base] & 0x0F) << 11) +
-	                        ((buf[5 + base] & 0xFF) << 3) +
-	                        ((buf[6 + base] & 0x30) >> 3);
-	   points[pointid].touch_major = buf[7 + base];
-	   points[pointid].width_major = buf[7 + base];
-	   points[pointid].z =  buf[6 + base] & 0x0F;
-	   event_flag = (buf[2 + base] >> 6);
+			points[pointid].x = ((buf[2 + base] & 0x20) >> 6) +
+                                ((buf[2 + base] & 0x0F) << 11) +
+                                ((buf[3 + base] & 0xFF) << 3) +
+                                ((buf[6 + base] & 0xC0) >> 5);
+			points[pointid].y = ((buf[2 + base] & 0x10) >> 4) +
+                                ((buf[4 + base] & 0x0F) << 11) +
+                                ((buf[5 + base] & 0xFF) << 3) +
+                                ((buf[6 + base] & 0x30) >> 3);
+			points[pointid].touch_major = buf[7 + base];
+			points[pointid].width_major = buf[7 + base];
+			points[pointid].z =  buf[6 + base] & 0x0F;
+			event_flag = (buf[2 + base] >> 6);
 
-        } else {
+		} else {
             points[pointid].x = ((buf[2 + base] & 0x0F) << 10) + ((buf[3 + base] & 0xFF) << 2)
                         + ((buf[6 + base] & 0xC0) >> 6);
             points[pointid].y = ((buf[4 + base] & 0x0F) << 10) + ((buf[5 + base] & 0xFF) << 2)
@@ -1647,52 +1543,6 @@ static void fts_health_report(void *chip_data, struct monitor_data *mon_data)
     TPD_INFO("Health register(0xFE):0x%x", ret);
 }
 
-static void fts_health_report_v2(void *chip_data, struct monitor_data_v2 *mon_data_v2)
-{
-    int ret = 0;
-    struct fts_ts_data *ts_data = (struct fts_ts_data *)chip_data;
-    char *freq_str = NULL;
-
-    ret = touch_i2c_read_byte(ts_data->client, 0x01);
-    TPD_INFO("Health register(0x01):0x%x", ret);
-    if (ret & 0x01) {
-        TPD_DETAIL("Health register(0x01):Water Shield");
-        tp_healthinfo_report(mon_data_v2, HEALTH_REPORT, HEALTH_REPORT_SHIELD_WATER);
-    }
-    if (ret & 0x02) {
-        TPD_DETAIL("Health register(0x01):Palm Shield");
-        tp_healthinfo_report(mon_data_v2, HEALTH_REPORT, HEALTH_REPORT_SHIELD_PALM);
-    }
-    if (ret & 0x04) {
-        TPD_DETAIL("Health register(0x01):Freq Hop");
-        tp_healthinfo_report(mon_data_v2, HEALTH_REPORT, HEALTH_REPORT_NOISE);
-    }
-    if (ret & 0x08) {
-        TPD_DETAIL("Health register(0x01):Base Refresh");
-        tp_healthinfo_report(mon_data_v2, HEALTH_REPORT, HEALTH_REPORT_BASELINE_ERR);
-    }
-    ret = touch_i2c_read_byte(ts_data->client, FTS_REG_HEALTH_1);
-    TPD_INFO("Health register(0xFD):0x%x(water-flag:%d / noise-flag:%d / no-suitable-freq:%d)",
-            ret, (ret & 0x01), (ret & 0x02), ((ret & 0x10) >> 4));
-    if (ret & 0x10 && !mon_data_v2->no_suitable_freq) {
-        mon_data_v2->no_suitable_freq = true;
-        tp_healthinfo_report(mon_data_v2, HEALTH_REPORT, HEALTH_REPORT_NO_SUITABLE_FREQ);
-    }
-    ret = touch_i2c_read_byte(ts_data->client, FTS_REG_HEALTH_2);
-    TPD_INFO("Health register(0xFE):0x%x(work-freq:%d)", ret, ret);
-    if (mon_data_v2->work_freq && mon_data_v2->work_freq != ret) {
-        freq_str = kzalloc(10, GFP_KERNEL);
-        if (!freq_str) {
-            TPD_INFO("freq_str kzalloc failed.\n");
-        } else {
-            snprintf(freq_str, 10, "freq_%d", ret);
-            tp_healthinfo_report(mon_data_v2, HEALTH_REPORT, freq_str);
-            kfree(freq_str);
-        }
-    }
-    mon_data_v2->work_freq = ret;
-}
-
 static int fts_get_gesture_info(void *chip_data, struct gesture_info *gesture)
 {
     struct fts_ts_data *ts_data = (struct fts_ts_data *)chip_data;
@@ -1711,26 +1561,6 @@ static int fts_get_gesture_info(void *chip_data, struct gesture_info *gesture)
     gesture_id = buf[2];
     point_num = buf[3];
     TPD_INFO("gesture_id=%d, point_num=%d", gesture_id, point_num);
-	if (gesture == NULL) {
-		TPD_INFO("gesture == NULL, return\n\
- 			gesture->Point_start.x = %d\n;\
-			gesture->Point_start.y = %d\n;\
-			gesture->Point_end.x = %d\n;\
-			gesture->Point_end.y = %d\n;\
-			gesture->Point_1st.x = %d\n;\
-			gesture->Point_1st.y = %d\n;\
-			gesture->Point_2nd.x = %d\n;\
-			gesture->Point_2nd.y = %d\n;\
-			gesture->Point_3rd.x = %d\n;\
-			gesture->Point_3rd.y = %d\n;\
-			gesture->Point_4th.x = %d\n;\
-			gesture->Point_4th.y = %d\n;"
-			,((buf[4] << 8) + buf[5]), ((buf[6] << 8) + buf[7]), ((buf[8] << 8) + buf[9])
-			,((buf[10] << 8) + buf[11]), ((buf[12] << 8) + buf[13]), ((buf[14] << 8) + buf[15])
-			,((buf[16] << 8) + buf[17]), ((buf[18] << 8) + buf[19]), ((buf[20] << 8) + buf[21])
-			,((buf[22] << 8) + buf[23]), ((buf[24] << 8) + buf[25]), ((buf[26] << 8) + buf[27]));
-		return ret;
-	}
     switch (gesture_id) {
     case GESTURE_DOUBLE_TAP:
         gesture->gesture_type = DouTap;
@@ -1873,6 +1703,7 @@ static void fts_enable_gesture_mask(void *chip_data, uint32_t enable)
     int config2 = 0;
     int config4 = 0;
     struct fts_ts_data *ts_data = (struct fts_ts_data *)chip_data;
+	int state = ts_data->gesture_state;
 
     if (enable) {
         config1 = 0xff;
@@ -1881,6 +1712,30 @@ static void fts_enable_gesture_mask(void *chip_data, uint32_t enable)
     } else if (!enable) {
 
     }
+	if (ts_data->black_gesture_indep) {
+        if (enable) {
+                SET_FTS_GESTURE(state, Right2LeftSwip, config1, 0)
+                SET_FTS_GESTURE(state, Left2RightSwip, config1, 1)
+                SET_FTS_GESTURE(state, Down2UpSwip, config1, 2)
+                SET_FTS_GESTURE(state, Up2DownSwip, config1, 3)
+                SET_FTS_GESTURE(state, DouTap, config1, 4)
+                SET_FTS_GESTURE(state, DouSwip, config1, 5)
+                SET_FTS_GESTURE(state, SingleTap, config1, 7)
+                SET_FTS_GESTURE(state, Circle, config2, 0)
+                SET_FTS_GESTURE(state, Wgestrue, config2, 1)
+                SET_FTS_GESTURE(state, Mgestrue, config2, 2)
+                SET_FTS_GESTURE(state, RightVee, config4, 1)
+                SET_FTS_GESTURE(state, LeftVee, config4, 2)
+                SET_FTS_GESTURE(state, DownVee, config4, 3)
+                SET_FTS_GESTURE(state, UpVee, config4, 4)
+                SET_GESTURE_BIT(state, Heart, config4, 5)
+	}	else {
+                config1 = 0;
+                config2 = 0;
+                config4 = 0;
+        }
+	}
+	TPD_INFO("%s: config1:%x, config2:%x config4:%x\n", __func__, config1, config2, config4);
     ret = touch_i2c_write_byte(ts_data->client, FTS_REG_GESTURE_CONFIG1, config1);
     if (ret < 0) {
         TPD_INFO("%s: write FTS_REG_GESTURE_CONFIG1 enable(%x=%x) fail", __func__, FTS_REG_GESTURE_CONFIG1, config1);
@@ -1948,13 +1803,6 @@ static int fts_refresh_switch(void *chip_data, int fps)
                                 fps == 60 ? FTS_120HZ_REPORT_RATE : FTS_180HZ_REPORT_RATE);
 }
 
-static void fts_set_gesture_state(void *chip_data, int state)
-{
-    struct fts_ts_data *ts_data = (struct fts_ts_data *)chip_data;
-
-    ts_data->gesture_state = state;
-}
-
 static int fts_smooth_lv_set(void *chip_data, int level)
 {
     struct fts_ts_data *ts_data = (struct fts_ts_data *)chip_data;
@@ -1973,26 +1821,11 @@ static int fts_sensitive_lv_set(void *chip_data, int level)
     return touch_i2c_write_byte(ts_data->client, FTS_REG_SENSITIVE_LEVEL, level);
 }
 
-static int fts_set_high_frame_rate(void *chip_data, int level, int time)
+static void fts_set_gesture_state(void *chip_data, int state)
 {
-	int ret = 0;
 	struct fts_ts_data *ts_data = (struct fts_ts_data *)chip_data;
-	struct touchpanel_data *ts = i2c_get_clientdata(ts_data->client);
 
-	TPD_INFO("set high_frame_rate to %d, keep %ds", level, time);
-	if (level != 0) {
-		level = 4;
-	}
-	level = level | (!ts->noise_level);
-
-	ret = touch_i2c_write_byte(ts_data->client, FTS_REG_GAME_MODE_EN, level);
-	if (ret < 0) {
-		return ret;
-	}
-	if (level) {
-		ret = touch_i2c_write_byte(ts_data->client, FTS_REG_HIGH_FRAME_TIME, time);
-	}
-	return ret;
+	ts_data->gesture_state = state;
 }
 
 static struct oplus_touchpanel_operations fts_ops = {
@@ -2007,7 +1840,6 @@ static struct oplus_touchpanel_operations fts_ops = {
     .u32_trigger_reason         = fts_u32_trigger_reason,
     .get_touch_points           = fts_get_touch_points,
     .health_report              = fts_health_report,
-    .health_report_v2           = fts_health_report_v2,
     .get_gesture_info           = fts_get_gesture_info,
     .ftm_process                = fts_ftm_process,
     .enable_fingerprint         = fts_enable_fingerprint_underscreen,
@@ -2020,8 +1852,7 @@ static struct oplus_touchpanel_operations fts_ops = {
     .tp_refresh_switch          = fts_refresh_switch,
     .smooth_lv_set              = fts_smooth_lv_set,
     .sensitive_lv_set           = fts_sensitive_lv_set,
-    .set_gesture_state          = fts_set_gesture_state,
-    .set_high_frame_rate        = fts_set_high_frame_rate,
+	.set_gesture_state          = fts_set_gesture_state,
 };
 
 static struct fts_proc_operations fts_proc_ops = {
@@ -2032,9 +1863,8 @@ static struct debug_info_proc_operations fts_debug_info_proc_ops = {
     .limit_read        = ft_limit_read_std,
     .delta_read        = fts_delta_read,
     .self_delta_read   = fts_self_delta_read,
-    .baseline_read	   = fts_baseline_read,
+    .baseline_read = fts_baseline_read,
     .main_register_read = fts_main_register_read,
-	.baseline_blackscreen_read = fts_baseline_read,
 };
 
 struct focal_debug_func focal_debug_ops = {
@@ -2081,51 +1911,17 @@ static int ft3518_parse_dts(struct fts_ts_data *ts_data, struct i2c_client *clie
 {
     struct device *dev;
     struct device_node *np;
-	int ret = 0;
 
     dev = &client->dev;
     np = dev->of_node;
 
-	ts_data->high_resolution_support = of_property_read_bool(np, "high_resolution_support");
+    ts_data->high_resolution_support = of_property_read_bool(np, "high_resolution_support");
 	ts_data->high_resolution_support_x8 = of_property_read_bool(np, "high_resolution_support_x8");
 	TPD_INFO("%s:high_resolution_support is:%d %d\n", __func__, ts_data->high_resolution_support, ts_data->high_resolution_support_x8);
-	ts_data->need_pinctrl_pull_up_reset = of_property_read_bool(np, "need_pinctrl_pull_up_reset");
-	TPD_INFO("%s:need_pinctrl_pull_up_reset is: %d\n", __func__, ts_data->need_pinctrl_pull_up_reset);
+        ts_data->read_buffer_support = of_property_read_bool(np, "read_buffer_support");
+        TPD_INFO("%s:read_buffer_support is:%d\n", __func__, ts_data->read_buffer_support);
 
-	if (ts_data->need_pinctrl_pull_up_reset) {
-		ts_data->hw_res->pinctrl = devm_pinctrl_get(dev);
-		if (IS_ERR_OR_NULL(ts_data->hw_res->pinctrl)) {
-			TPD_INFO("Getting pinctrl handle failed");
-			ret = PTR_ERR(ts_data->hw_res->pinctrl);
-			goto err_pinctrl_get;
-		} else {
-			ts_data->hw_res->pin_set_reset_high = pinctrl_lookup_state(ts_data->hw_res->pinctrl, "pin_set_reset_high");
-			if (IS_ERR_OR_NULL(ts_data->hw_res->pin_set_reset_high)) {
-				TPD_INFO("Failed to get reset high state pinctrl handle\n");
-				ret = PTR_ERR(ts_data->hw_res->pin_set_reset_high);
-				goto err_pinctrl_lookup;
-			}
-
-			ts_data->hw_res->pin_set_reset_low = pinctrl_lookup_state(ts_data->hw_res->pinctrl, "pin_set_reset_low");
-			if (IS_ERR_OR_NULL(ts_data->hw_res->pin_set_reset_low)) {
-				TPD_INFO(" Failed to get reset low state pinctrl handle\n");
-				ret = PTR_ERR(ts_data->hw_res->pin_set_reset_low);
-				goto err_pinctrl_lookup;
-			}
-		}
-	}
-	return 0;
-
-err_pinctrl_lookup:
-	if (ts_data->hw_res->pinctrl) {
-		devm_pinctrl_put(ts_data->hw_res->pinctrl);
-	}
-err_pinctrl_get:
-	ts_data->hw_res->pinctrl = NULL;
-	ts_data->hw_res->pin_set_reset_low = NULL;
-	ts_data->hw_res->pin_set_reset_high = NULL;
-
-	return ret;
+    return 0;
 }
 
 static int fts_tp_probe(struct i2c_client *client, const struct i2c_device_id *id)
@@ -2187,9 +1983,10 @@ static int fts_tp_probe(struct i2c_client *client, const struct i2c_device_id *i
     if (ret < 0) {
         goto err_register_driver;
     }
-    ts_data->black_gesture_indep = ts->black_gesture_indep_support;
+
     ts_data->monitor_data_v2 = &ts->monitor_data_v2;
 	ts_data->exception_data = &ts->exception_data;
+	ts_data->black_gesture_indep = ts->black_gesture_indep_support;
 
     /*step6:create synaptics related proc files*/
     fts_create_proc(ts, ts_data->syna_ops);

@@ -57,15 +57,46 @@ static int sec_power_control(void *chip_data, bool enable);
 static int sec_get_verify_result(struct chip_data_s6sy792 *chip_info);
 static int sec_read_mutual(struct chip_data_s6sy792 *chip_info, u8 type, char *data, int len);
 static bool check_calibration(struct chip_data_s6sy792 *chip_info);
+static int ver_bottom_large_handle_func(struct grip_zone_area *grip_zone, bool enable);
+static int hor_corner_large_handle_func(struct grip_zone_area *grip_zone, bool enable);
+static int long_size_dead_zone_handle_func(struct grip_zone_area *grip_zone, bool enable);
+static int short_size_dead_zone_handle_func(struct grip_zone_area *grip_zone, bool enable);
+static int long_size_condtion_zone_handle_func(struct grip_zone_area *grip_zone, bool enable);
+static int short_size_condtion_zone_handle_func(struct grip_zone_area *grip_zone, bool enable);
+static int long_size_large_zone_handle_func(struct grip_zone_area *grip_zone, bool enable);
+static int short_size_large_zone_handle_func(struct grip_zone_area *grip_zone, bool enable);
+static int sec_set_large_corner_frame_limit(int frame_limit);
+static int sec_set_no_handle_area(struct kernel_grip_info *grip_info);
+static int sec_set_condition_frame_limit(int frame_limit);
+static int sec_set_large_frame_limit(int frame_limit);
+static void sec_set_grip_touch_direction(uint8_t dir);
 static void sec_calibrate(struct seq_file *s, void *chip_data);
 static bool sec_get_cal_status(struct seq_file *s, void *chip_data);
-static int sec_stop_filter_set(struct chip_data_s6sy792 *chip_info, int level, int usb_state);
-
 
 /**************************** end of function delcare*****************************************/
 
 /*************************** start of global variable delcare****************************************/
 static struct chip_data_s6sy792 *g_chip_info;
+static struct sec_support_grip_zone sec_grip[] = {
+    {"ver_left_bottom_large", ver_bottom_large_handle_func},
+    //{"ver_right_bottom_large", ver_bottom_large_handle_func},
+    {"hor90_left_corner_large", hor_corner_large_handle_func},
+    //{"hor90_right_corner_large", hor_corner_large_handle_func},
+    //{"hor270_left_corner_large", hor_corner_large_handle_func},
+    //{"hor270_right_corner_large", hor_corner_large_handle_func},
+    {"ver_left_dead", long_size_dead_zone_handle_func},
+    //{"ver_right_dead", long_size_dead_zone_handle_func},
+    {"hor_left_dead", short_size_dead_zone_handle_func},
+    //{"hor_right_dead", short_size_dead_zone_handle_func},
+    {"ver_left_condtion", long_size_condtion_zone_handle_func},
+    //{"ver_right_condtion", long_size_condtion_zone_handle_func},
+    {"hor_left_condtion", short_size_condtion_zone_handle_func},
+    //{"hor_right_condtion", short_size_condtion_zone_handle_func},
+    {"ver_left_large", long_size_large_zone_handle_func},
+    //{"ver_right_large", long_size_large_zone_handle_func},
+    {"hor_left_large", short_size_large_zone_handle_func},
+    //{"hor_right_large", short_size_large_zone_handle_func},
+};
 /**************************** end of global variable delcare*****************************************/
 
 /****** Start of other functions that work for oplus_touchpanel_operations callbacks***********/
@@ -73,41 +104,15 @@ static int sec_enable_black_gesture(struct chip_data_s6sy792 *chip_info, bool en
 {
     int ret = 0;
     int i = 0;
-	int state = chip_info->gesture_state;
-	int config = 0xFF9F;
 
     TPD_INFO("%s, enable = %d\n", __func__, enable);
 
     if (enable) {
 	if (chip_info->black_gesture_indep) {
-		SET_GESTURE_BIT(state, Up2DownSwip, config, 15);
-		SET_GESTURE_BIT(state, Down2UpSwip, config, 14);
-		SET_GESTURE_BIT(state, Circle, config, 13);
-		SET_GESTURE_BIT(state, LeftVee, config, 12);
-		SET_GESTURE_BIT(state, RightVee, config, 11);
-		SET_GESTURE_BIT(state, DownVee, config, 10);
-		SET_GESTURE_BIT(state, UpVee, config, 9);
-		SET_GESTURE_BIT(state, DouTap, config, 8);
-		SET_GESTURE_BIT(state, Heart, config, 7);
-		/*SET_GESTURE_BIT(state, "S", config, 6);*/
-		/*SET_GESTURE_BIT(state, "one tap", config, 5);*/
-
-		if (CHK_BIT(state, (1 << DouSwip))) {
-			TPD_DEBUG("need first enable '|'\n");
-			SET_BIT(config, (1 << 15));
-		}
-
-		SET_GESTURE_BIT(state, DouSwip, config, 4);
-		SET_GESTURE_BIT(state, Wgestrue, config, 3);
-		SET_GESTURE_BIT(state, Mgestrue, config, 2);
-		SET_GESTURE_BIT(state, Left2RightSwip, config, 1);
-		SET_GESTURE_BIT(state, Right2LeftSwip, config, 0);
-
-		TPD_INFO("enable success: config is 0x%x\n", config);
+		touch_i2c_write_word(chip_info->client, SEC_CMD_WAKEUP_GESTURE_MODE, chip_info->gesture_state);
+	} else {
+        	touch_i2c_write_word(chip_info->client, SEC_CMD_WAKEUP_GESTURE_MODE, 0xFF9F);
 	}
-
-	touch_i2c_write_word(chip_info->client, SEC_CMD_WAKEUP_GESTURE_MODE, config);
-
         for (i = 0; i < 20; i++) {
             touch_i2c_write_byte(chip_info->client, SEC_CMD_SET_POWER_MODE, 0x01);
             sec_mdelay(10);
@@ -230,12 +235,11 @@ static int sec_enable_palm_reject(struct chip_data_s6sy792 *chip_info, bool enab
 
 static int sec_enable_game_mode(struct chip_data_s6sy792 *chip_info, bool enable)
 {
-	int ret = -1;
+    int ret = -1;
 
-	ret = touch_i2c_write_byte(chip_info->client, SEC_CMD_GAME_MODE, enable ? 1 : 0);
-	TPD_INFO("%s: state: %d %s!\n", __func__, enable, ret < 0 ? "failed" : "success");
-
-	return ret;
+    ret = touch_i2c_write_byte(chip_info->client, SEC_CMD_GAME_MODE, enable ? 1 : 0);
+    TPD_INFO("%s: state: %d %s!\n", __func__, enable, ret < 0 ? "failed" : "success");
+    return ret;
 }
 
 static int sec_enable_headset_mode(struct chip_data_s6sy792 *chip_info, bool enable)
@@ -750,6 +754,7 @@ static int sec_reset(void *chip_data)
 
     enable_irq(chip_info->client->irq);
     sec_set_kernel_grip_para(chip_info->kernel_grip_para);
+	sec_set_grip_touch_direction(chip_info->touch_direction);
 
     return 0;
 }
@@ -815,6 +820,7 @@ static int sec_power_control(void *chip_data, bool enable)
         TPD_INFO("%s: write sense on %s\n", __func__, (ret < 0) ? "failed" : "success");
         chip_info->is_power_down = false;
         sec_set_kernel_grip_para(chip_info->kernel_grip_para);
+	sec_set_grip_touch_direction(chip_info->touch_direction);
         if (chip_info->irq_requested) {
             enable_irq(chip_info->client->irq);
         }
@@ -937,7 +943,6 @@ static fw_update_state sec_fw_update(void *chip_data, const struct firmware *fw,
     uint32_t fw_version_in_bin = 0, fw_version_in_ic = 0;
     uint32_t config_version_in_bin = 0, config_version_in_ic = 0;
     struct chip_data_s6sy792 *chip_info = (struct chip_data_s6sy792 *)chip_data;
-	struct monitor_data_v2 *monitor_data = chip_info->monitor_data_v2;
 
     if (!chip_info) {
         TPD_INFO("Chip info is NULL\n");
@@ -977,7 +982,6 @@ static fw_update_state sec_fw_update(void *chip_data, const struct firmware *fw,
     if (!force) {
         if (fw_version_in_bin == fw_version_in_ic) {
             update_state = FW_NO_NEED_UPDATE;
-			tp_healthinfo_report(monitor_data, HEALTH_FW_UPDATE, "fw_version failed");
             goto CAL_CHECK;
         }
     }
@@ -985,14 +989,12 @@ static fw_update_state sec_fw_update(void *chip_data, const struct firmware *fw,
     if (sec_enter_fw_mode(chip_info)) {
         TPD_INFO("%s: enter fw mode failed\n", __func__);
         update_state = FW_UPDATE_ERROR;
-		tp_healthinfo_report(monitor_data, HEALTH_FW_UPDATE, "enter fw mode failed");
         goto CAL_CHECK;
     }
 
     if (fw_hd->signature != SEC_FW_HEADER_SIGN) {
         TPD_INFO("%s: firmware header error(0x%08x)\n", __func__, fw_hd->signature);
         update_state = FW_UPDATE_ERROR;
-		tp_healthinfo_report(monitor_data, HEALTH_FW_UPDATE, "firmware header failed");
         goto CAL_CHECK;
     }
 
@@ -1003,7 +1005,6 @@ static fw_update_state sec_fw_update(void *chip_data, const struct firmware *fw,
         if (fw_ch->signature != SEC_FW_CHUNK_SIGN) {
             TPD_INFO("%s: firmware chunk error(0x%08x)\n", __func__, fw_ch->signature);
             update_state = FW_UPDATE_ERROR;
-			tp_healthinfo_report(monitor_data, HEALTH_FW_UPDATE, "firmware chunk chunk failed");
             goto CAL_CHECK;
         }
         fd += sizeof(sec_fw_chunk);
@@ -1011,13 +1012,11 @@ static fw_update_state sec_fw_update(void *chip_data, const struct firmware *fw,
         if (ret < 0) {
             TPD_INFO("update chunk failed\n");
             update_state = FW_UPDATE_ERROR;
-			tp_healthinfo_report(monitor_data, HEALTH_FW_UPDATE, "update chunk failed");
             goto CAL_CHECK;
         }
         fd += fw_ch->size;
     }
     update_state = FW_UPDATE_SUCCESS;
-	tp_healthinfo_report(monitor_data, HEALTH_FW_UPDATE, "FW_Update_Success");
 
     sec_reset(chip_info);
     cal_status = sec_read_calibration_report(chip_info);    //read out calibration result
@@ -1074,6 +1073,7 @@ static u32 sec_trigger_reason(void *chip_data, int gesture_enable, int is_suspen
         return IRQ_IGNORE;
     }
 
+    /*
     left_event_cnt = chip_info->first_event[8] & 0x3F;
     if (left_event_cnt > MAX_EVENT_COUNT - 1) {
         TPD_INFO("%s: event buffer overflow, do clear the buffer\n", __func__);
@@ -1083,6 +1083,7 @@ static u32 sec_trigger_reason(void *chip_data, int gesture_enable, int is_suspen
         }
         return IRQ_IGNORE;
     }
+    */
 
     event_id = chip_info->first_event[0] & 0x3;
     if (event_id == SEC_STATUS_EVENT) {
@@ -1128,7 +1129,7 @@ static u32 sec_trigger_reason(void *chip_data, int gesture_enable, int is_suspen
         }
 
         /* event queue full-> all finger release */
-        if ((p_event_status->stype == TYPE_STATUS_EVENT_ERR) && (p_event_status->status_id == SEC_ERR_EVENT_QUEUE_FULL)) {
+        if ((p_event_status->stype == TYPE_STATUS_EVENT_VENDOR_INFO) && (p_event_status->status_id == SEC_ERR_EVENT_QUEUE_FULL)) {
             TPD_INFO("%s: IC Event Queue is full\n", __func__);
             tp_touch_btnkey_release();
         }
@@ -1142,6 +1143,15 @@ static u32 sec_trigger_reason(void *chip_data, int gesture_enable, int is_suspen
             return IRQ_IGNORE;
         }
     } else if (event_id == SEC_COORDINATE_EVENT) {
+	left_event_cnt = chip_info->first_event[8] & 0x3F;
+	if (left_event_cnt > MAX_EVENT_COUNT - 1) {
+		TPD_INFO("%s: event buffer overflow, do clear the buffer\n", __func__);
+		ret = touch_i2c_write_block(chip_info->client, SEC_CMD_CLEAR_EVENT_STACK, 0, NULL);
+		if (ret < 0) {
+			TPD_INFO("%s: clear event buffer failed\n", __func__);
+		}
+		return IRQ_IGNORE;
+	}
         return IRQ_TOUCH;
     } else if (event_id == SEC_GESTURE_EVENT) {
         return IRQ_GESTURE;
@@ -1292,16 +1302,21 @@ static int sec_get_gesture_info(void *chip_data, struct gesture_info *gesture)
     struct Coordinate limitPoint[4];
     struct sec_gesture_status *p_event_gesture = NULL;
     struct chip_data_s6sy792 *chip_info = (struct chip_data_s6sy792 *)chip_data;
+	bool ear_sense_support_b = 0;
+	struct touchpanel_data *ts = i2c_get_clientdata(chip_info->client);
+	if (ts) {
+		ear_sense_support_b = ts->ear_sense_support;
+	}
 
     p_event_gesture = (struct sec_gesture_status *)chip_info->first_event;
     if (p_event_gesture->coordLen > 24) {
         p_event_gesture->coordLen = 24;
     }
 
-    if (p_event_gesture->gestureId == GESTURE_EARSENSE) {
-        TPD_DETAIL("earsense gesture: away from panel\n");
-        return 0;
-    }
+	if ((p_event_gesture->gestureId == GESTURE_EARSENSE) && (ear_sense_support_b)) {
+		TPD_DETAIL("earsense gesture: away from panel\n");
+		return 0;
+	}
     ret = touch_i2c_read_block(chip_info->client, SEC_READ_GESTURE_EVENT, p_event_gesture->coordLen, coord);
     if (ret < 0) {
         TPD_INFO("%s: read gesture data failed\n", __func__);
@@ -1314,168 +1329,172 @@ static int sec_get_gesture_info(void *chip_data, struct gesture_info *gesture)
         }
     }
 
-    switch (p_event_gesture->gestureId) {   //judge gesture type
-    case GESTURE_RIGHT:
-        gesture->gesture_type  = Left2RightSwip;
-        gesture->Point_start.x = (coord[1] << 8) | coord[0];
-        gesture->Point_start.y = (coord[3] << 8) | coord[2];
-        gesture->Point_end.x   = (coord[5] << 8) | coord[4];
-        gesture->Point_end.y   = (coord[7] << 8) | coord[6];
-        break;
+	switch (p_event_gesture->gestureId) {   /*judge gesture type*/
+	case GESTURE_RIGHT:
+		gesture->gesture_type  = Left2RightSwip;
+		gesture->Point_start.x = (coord[1] << 8) | coord[0];
+		gesture->Point_start.y = (coord[3] << 8) | coord[2];
+		gesture->Point_end.x   = (coord[5] << 8) | coord[4];
+		gesture->Point_end.y   = (coord[7] << 8) | coord[6];
+		break;
 
-    case GESTURE_LEFT:
-        gesture->gesture_type  = Right2LeftSwip;
-        gesture->Point_start.x = (coord[1] << 8) | coord[0];
-        gesture->Point_start.y = (coord[3] << 8) | coord[2];
-        gesture->Point_end.x   = (coord[5] << 8) | coord[4];
-        gesture->Point_end.y   = (coord[7] << 8) | coord[6];
-        break;
+	case GESTURE_LEFT:
+		gesture->gesture_type  = Right2LeftSwip;
+		gesture->Point_start.x = (coord[1] << 8) | coord[0];
+		gesture->Point_start.y = (coord[3] << 8) | coord[2];
+		gesture->Point_end.x   = (coord[5] << 8) | coord[4];
+		gesture->Point_end.y   = (coord[7] << 8) | coord[6];
+		break;
 
-    case GESTURE_DOWN:
-        gesture->gesture_type  = Up2DownSwip;
-        gesture->Point_start.x = (coord[1] << 8) | coord[0];
-        gesture->Point_start.y = (coord[3] << 8) | coord[2];
-        gesture->Point_end.x   = (coord[5] << 8) | coord[4];
-        gesture->Point_end.y   = (coord[7] << 8) | coord[6];
-        break;
+	case GESTURE_DOWN:
+		gesture->gesture_type  = Up2DownSwip;
+		gesture->Point_start.x = (coord[1] << 8) | coord[0];
+		gesture->Point_start.y = (coord[3] << 8) | coord[2];
+		gesture->Point_end.x   = (coord[5] << 8) | coord[4];
+		gesture->Point_end.y   = (coord[7] << 8) | coord[6];
+		break;
 
-    case GESTURE_UP:
-        gesture->gesture_type  = Down2UpSwip;
-        gesture->Point_start.x = (coord[1] << 8) | coord[0];
-        gesture->Point_start.y = (coord[3] << 8) | coord[2];
-        gesture->Point_end.x   = (coord[5] << 8) | coord[4];
-        gesture->Point_end.y   = (coord[7] << 8) | coord[6];
-        break;
+	case GESTURE_UP:
+		gesture->gesture_type  = Down2UpSwip;
+		gesture->Point_start.x = (coord[1] << 8) | coord[0];
+		gesture->Point_start.y = (coord[3] << 8) | coord[2];
+		gesture->Point_end.x   = (coord[5] << 8) | coord[4];
+		gesture->Point_end.y   = (coord[7] << 8) | coord[6];
+		break;
+	case GESTURE_DOUBLECLICK:
+		gesture->gesture_type  = DouTap;
+		gesture->Point_start.x = (coord[1] << 8) | coord[0];
+		gesture->Point_start.y = (coord[3] << 8) | coord[2];
+		gesture->Point_end     = gesture->Point_start;
+		break;
 
-    case GESTURE_DOUBLECLICK:
-        gesture->gesture_type  = DouTap;
-        gesture->Point_start.x = (coord[1] << 8) | coord[0];
-        gesture->Point_start.y = (coord[3] << 8) | coord[2];
-        gesture->Point_end     = gesture->Point_start;
-        break;
+	case GESTURE_UP_V:
+		gesture->gesture_type  = UpVee;
+		gesture->Point_start.x = (coord[1] << 8) | coord[0];
+		gesture->Point_start.y = (coord[3] << 8) | coord[2];
+		gesture->Point_1st.x   = (coord[5] << 8) | coord[4];
+		gesture->Point_1st.y   = (coord[7] << 8) | coord[6];
+		gesture->Point_end.x   = (coord[9] << 8) | coord[8];
+		gesture->Point_end.y   = (coord[11] << 8) | coord[10];
+		break;
 
-    case GESTURE_UP_V:
-        gesture->gesture_type  = UpVee;
-        gesture->Point_start.x = (coord[1] << 8) | coord[0];
-        gesture->Point_start.y = (coord[3] << 8) | coord[2];
-        gesture->Point_1st.x   = (coord[5] << 8) | coord[4];
-        gesture->Point_1st.y   = (coord[7] << 8) | coord[6];
-        gesture->Point_end.x   = (coord[9] << 8) | coord[8];
-        gesture->Point_end.y   = (coord[11] << 8) | coord[10];
-        break;
+	case GESTURE_DOWN_V:
+		gesture->gesture_type  = DownVee;
+		gesture->Point_start.x = (coord[1] << 8) | coord[0];
+		gesture->Point_start.y = (coord[3] << 8) | coord[2];
+		gesture->Point_1st.x   = (coord[5] << 8) | coord[4];
+		gesture->Point_1st.y   = (coord[7] << 8) | coord[6];
+		gesture->Point_end.x   = (coord[9] << 8) | coord[8];
+		gesture->Point_end.y   = (coord[11] << 8) | coord[10];
+		break;
 
-    case GESTURE_DOWN_V:
-        gesture->gesture_type  = DownVee;
-        gesture->Point_start.x = (coord[1] << 8) | coord[0];
-        gesture->Point_start.y = (coord[3] << 8) | coord[2];
-        gesture->Point_1st.x   = (coord[5] << 8) | coord[4];
-        gesture->Point_1st.y   = (coord[7] << 8) | coord[6];
-        gesture->Point_end.x   = (coord[9] << 8) | coord[8];
-        gesture->Point_end.y   = (coord[11] << 8) | coord[10];
-        break;
+	case GESTURE_LEFT_V:
+		gesture->gesture_type = LeftVee;
+		gesture->Point_start.x = (coord[1] << 8) | coord[0];
+		gesture->Point_start.y = (coord[3] << 8) | coord[2];
+		gesture->Point_1st.x   = (coord[5] << 8) | coord[4];
+		gesture->Point_1st.y   = (coord[7] << 8) | coord[6];
+		gesture->Point_end.x   = (coord[9] << 8) | coord[8];
+		gesture->Point_end.y   = (coord[11] << 8) | coord[10];
+		break;
 
-    case GESTURE_LEFT_V:
-        gesture->gesture_type = LeftVee;
-        gesture->Point_start.x = (coord[1] << 8) | coord[0];
-        gesture->Point_start.y = (coord[3] << 8) | coord[2];
-        gesture->Point_1st.x   = (coord[5] << 8) | coord[4];
-        gesture->Point_1st.y   = (coord[7] << 8) | coord[6];
-        gesture->Point_end.x   = (coord[9] << 8) | coord[8];
-        gesture->Point_end.y   = (coord[11] << 8) | coord[10];
-        break;
+	case GESTURE_RIGHT_V:
+		gesture->gesture_type  = RightVee;
+		gesture->Point_start.x = (coord[1] << 8) | coord[0];
+		gesture->Point_start.y = (coord[3] << 8) | coord[2];
+		gesture->Point_1st.x   = (coord[5] << 8) | coord[4];
+		gesture->Point_1st.y   = (coord[7] << 8) | coord[6];
+		gesture->Point_end.x   = (coord[9] << 8) | coord[8];
+		gesture->Point_end.y   = (coord[11] << 8) | coord[10];
+		break;
+	case GESTURE_O:
+		gesture->gesture_type = Circle;
+		gesture->clockwise = (p_event_gesture->data == 0) ? 1 : 0;
+		gesture->Point_start.x = (coord[1] << 8) | coord[0];
+		gesture->Point_start.y = (coord[3] << 8) | coord[2];
+		limitPoint[0].x   = (coord[5] << 8) | coord[4];    /*ymin*/
+		limitPoint[0].y   = (coord[7] << 8) | coord[6];
+		limitPoint[1].x   = (coord[9] << 8) | coord[8];    /*xmin*/
+		limitPoint[1].y   = (coord[11] << 8) | coord[10];
+		limitPoint[2].x   = (coord[13] << 8) | coord[12];   /*ymax*/
+		limitPoint[2].y   = (coord[15] << 8) | coord[14];
+		limitPoint[3].x   = (coord[17] << 8) | coord[16];  /*xmax*/
+		limitPoint[3].y   = (coord[19] << 8) | coord[18];
+		gesture->Point_end.x   = (coord[21] << 8) | coord[20];
+		gesture->Point_end.y   = (coord[23] << 8) | coord[22];
+		handleFourCornerPoint(&limitPoint[0], 4);
+		gesture->Point_1st = limitPoint[0]; /*ymin*/
+		gesture->Point_2nd = limitPoint[1]; /*xmin*/
+		gesture->Point_3rd = limitPoint[2]; /*ymax*/
+		gesture->Point_4th = limitPoint[3]; /*xmax*/
+		break;
 
-    case GESTURE_RIGHT_V:
-        gesture->gesture_type  = RightVee;
-        gesture->Point_start.x = (coord[1] << 8) | coord[0];
-        gesture->Point_start.y = (coord[3] << 8) | coord[2];
-        gesture->Point_1st.x   = (coord[5] << 8) | coord[4];
-        gesture->Point_1st.y   = (coord[7] << 8) | coord[6];
-        gesture->Point_end.x   = (coord[9] << 8) | coord[8];
-        gesture->Point_end.y   = (coord[11] << 8) | coord[10];
-        break;
+	case GESTURE_DOUBLE_LINE:
+		gesture->gesture_type  = DouSwip;
+		gesture->Point_start.x = (coord[1] << 8) | coord[0];
+		gesture->Point_start.y = (coord[3] << 8) | coord[2];
+		gesture->Point_end.x   = (coord[5] << 8) | coord[4];
+		gesture->Point_end.y   = (coord[7] << 8) | coord[6];
+		gesture->Point_1st.x   = (coord[9] << 8) | coord[8];
+		gesture->Point_1st.y   = (coord[11] << 8) | coord[10];
+		gesture->Point_2nd.x   = (coord[13] << 8) | coord[12];
+		gesture->Point_2nd.y   = (coord[15] << 8) | coord[14];
+		break;
 
-    case GESTURE_O:
-        gesture->gesture_type = Circle;
-        gesture->clockwise = (p_event_gesture->data == 0) ? 1 : 0;
-        gesture->Point_start.x = (coord[1] << 8) | coord[0];
-        gesture->Point_start.y = (coord[3] << 8) | coord[2];
-        limitPoint[0].x   = (coord[5] << 8) | coord[4];    //ymin
-        limitPoint[0].y   = (coord[7] << 8) | coord[6];
-        limitPoint[1].x   = (coord[9] << 8) | coord[8];    //xmin
-        limitPoint[1].y   = (coord[11] << 8) | coord[10];
-        limitPoint[2].x   = (coord[13] << 8) | coord[12];   //ymax
-        limitPoint[2].y   = (coord[15] << 8) | coord[14];
-        limitPoint[3].x   = (coord[17] << 8) | coord[16];  //xmax
-        limitPoint[3].y   = (coord[19] << 8) | coord[18];
-        gesture->Point_end.x   = (coord[21] << 8) | coord[20];
-        gesture->Point_end.y   = (coord[23] << 8) | coord[22];
-        handleFourCornerPoint(&limitPoint[0], 4);
-        gesture->Point_1st = limitPoint[0]; //ymin
-        gesture->Point_2nd = limitPoint[1]; //xmin
-        gesture->Point_3rd = limitPoint[2]; //ymax
-        gesture->Point_4th = limitPoint[3]; //xmax
-        break;
+	case GESTURE_M:
+		gesture->gesture_type  = Mgestrue;
+		gesture->Point_start.x = (coord[1] << 8) | coord[0];
+		gesture->Point_start.y = (coord[3] << 8) | coord[2];
+		gesture->Point_1st.x   = (coord[5] << 8) | coord[4];
+		gesture->Point_1st.y   = (coord[7] << 8) | coord[6];
+		gesture->Point_2nd.x   = (coord[9] << 8) | coord[8];
+		gesture->Point_2nd.y   = (coord[11] << 8) | coord[10];
+		gesture->Point_3rd.x   = (coord[13] << 8) | coord[12];
+		gesture->Point_3rd.y   = (coord[15] << 8) | coord[14];
+		gesture->Point_end.x   = (coord[17] << 8) | coord[16];
+		gesture->Point_end.y   = (coord[19] << 8) | coord[18];
+		break;
 
-    case GESTURE_DOUBLE_LINE:
-        gesture->gesture_type  = DouSwip;
-        gesture->Point_start.x = (coord[1] << 8) | coord[0];
-        gesture->Point_start.y = (coord[3] << 8) | coord[2];
-        gesture->Point_end.x   = (coord[5] << 8) | coord[4];
-        gesture->Point_end.y   = (coord[7] << 8) | coord[6];
-        gesture->Point_1st.x   = (coord[9] << 8) | coord[8];
-        gesture->Point_1st.y   = (coord[11] << 8) | coord[10];
-        gesture->Point_2nd.x   = (coord[13] << 8) | coord[12];
-        gesture->Point_2nd.y   = (coord[15] << 8) | coord[14];
-        break;
+	case GESTURE_W:
+		gesture->gesture_type  = Wgestrue;
+		gesture->Point_start.x = (coord[1] << 8) | coord[0];
+		gesture->Point_start.y = (coord[3] << 8) | coord[2];
+		gesture->Point_1st.x   = (coord[5] << 8) | coord[4];
+		gesture->Point_1st.y   = (coord[7] << 8) | coord[6];
+		gesture->Point_2nd.x   = (coord[9] << 8) | coord[8];
+		gesture->Point_2nd.y   = (coord[11] << 8) | coord[10];
+		gesture->Point_3rd.x   = (coord[13] << 8) | coord[12];
+		gesture->Point_3rd.y   = (coord[15] << 8) | coord[14];
+		gesture->Point_end.x   = (coord[17] << 8) | coord[16];
+		gesture->Point_end.y   = (coord[19] << 8) | coord[18];
+		break;
 
-    case GESTURE_M:
-        gesture->gesture_type  = Mgestrue;
-        gesture->Point_start.x = (coord[1] << 8) | coord[0];
-        gesture->Point_start.y = (coord[3] << 8) | coord[2];
-        gesture->Point_1st.x   = (coord[5] << 8) | coord[4];
-        gesture->Point_1st.y   = (coord[7] << 8) | coord[6];
-        gesture->Point_2nd.x   = (coord[9] << 8) | coord[8];
-        gesture->Point_2nd.y   = (coord[11] << 8) | coord[10];
-        gesture->Point_3rd.x   = (coord[13] << 8) | coord[12];
-        gesture->Point_3rd.y   = (coord[15] << 8) | coord[14];
-        gesture->Point_end.x   = (coord[17] << 8) | coord[16];
-        gesture->Point_end.y   = (coord[19] << 8) | coord[18];
-        break;
+	case GESTURE_HEART:
+		gesture->gesture_type = Heart;
+		gesture->clockwise = (p_event_gesture->data == 0x08) ? 1 : 0;
+		gesture->Point_start.x = (coord[1] << 8) | coord[0];
+		gesture->Point_start.y = (coord[3] << 8) | coord[2];
+		gesture->Point_2nd.x   = (coord[5] << 8) | coord[4];
+		gesture->Point_2nd.y   = (coord[7] << 8) | coord[6];
+		gesture->Point_1st.x   = (coord[9] << 8) | coord[8];
+		gesture->Point_1st.y   = (coord[11] << 8) | coord[10];
+		gesture->Point_4th.x   = (coord[13] << 8) | coord[12];
+		gesture->Point_4th.y   = (coord[15] << 8) | coord[14];
+		gesture->Point_3rd.x   = (coord[17] << 8) | coord[16];
+		gesture->Point_3rd.y   = (coord[19] << 8) | coord[18];
+		gesture->Point_end.x   = (coord[21] << 8) | coord[20];
+		gesture->Point_end.y   = (coord[23] << 8) | coord[22];
+	break;
 
-    case GESTURE_W:
-        gesture->gesture_type  = Wgestrue;
-        gesture->Point_start.x = (coord[1] << 8) | coord[0];
-        gesture->Point_start.y = (coord[3] << 8) | coord[2];
-        gesture->Point_1st.x   = (coord[5] << 8) | coord[4];
-        gesture->Point_1st.y   = (coord[7] << 8) | coord[6];
-        gesture->Point_2nd.x   = (coord[9] << 8) | coord[8];
-        gesture->Point_2nd.y   = (coord[11] << 8) | coord[10];
-        gesture->Point_3rd.x   = (coord[13] << 8) | coord[12];
-        gesture->Point_3rd.y   = (coord[15] << 8) | coord[14];
-        gesture->Point_end.x   = (coord[17] << 8) | coord[16];
-        gesture->Point_end.y   = (coord[19] << 8) | coord[18];
-        break;
+	case GESTURE_SINGLE_TAP:
+		gesture->gesture_type  = SingleTap;
+		gesture->Point_start.x = (coord[1] << 8) | coord[0];
+		gesture->Point_start.y = (coord[3] << 8) | coord[2];
+		break;
 
-    case GESTURE_HEART:
-        gesture->gesture_type = Heart;
-        gesture->clockwise = (p_event_gesture->data == 0x08) ? 1 : 0;
-        gesture->Point_start.x = (coord[1] << 8) | coord[0];
-        gesture->Point_start.y = (coord[3] << 8) | coord[2];
-        gesture->Point_2nd.x   = (coord[5] << 8) | coord[4];
-        gesture->Point_2nd.y   = (coord[7] << 8) | coord[6];
-        gesture->Point_1st.x   = (coord[9] << 8) | coord[8];
-        gesture->Point_1st.y   = (coord[11] << 8) | coord[10];
-        gesture->Point_4th.x   = (coord[13] << 8) | coord[12];
-        gesture->Point_4th.y   = (coord[15] << 8) | coord[14];
-        gesture->Point_3rd.x   = (coord[17] << 8) | coord[16];
-        gesture->Point_3rd.y   = (coord[19] << 8) | coord[18];
-        gesture->Point_end.x   = (coord[21] << 8) | coord[20];
-        gesture->Point_end.y   = (coord[23] << 8) | coord[22];
-        break;
-
-    default:
-        gesture->gesture_type = UnkownGesture;
-        break;
+	default:
+		gesture->gesture_type = UnkownGesture;
+		break;
     }
 #ifdef CONFIG_OPLUS_TP_APK
     chip_info->debug_gesture_type = gesture->gesture_type;
@@ -1668,6 +1687,57 @@ static uint8_t sec_get_touch_direction(void *chip_data)
     return chip_info->touch_direction;
 }
 
+static void sec_enable_kernel_grip(void *chip_data, struct kernel_grip_info *grip_info)
+{
+    struct list_head *pos = NULL;
+    struct grip_zone_area *grip_zone = NULL;
+    //struct chip_data_s6sy792 *chip_info = (struct chip_data_s6sy792 *)chip_data;
+    int i = 0;
+
+    if (!grip_info || !grip_info->grip_handle_in_fw) {
+        return;
+    }
+
+    list_for_each(pos, &grip_info->large_zone_list) {
+        grip_zone = (struct grip_zone_area *)pos;
+        for (i = 0 ; i < ARRAY_SIZE(sec_grip); i ++) {
+            if (!strncmp(grip_zone->name, sec_grip[i].name, GRIP_TAG_SIZE)) {
+                if (sec_grip[i].handle_func) {
+                    sec_grip[i].handle_func(grip_zone, true);
+                }
+            }
+        }
+    }
+
+    list_for_each(pos, &grip_info->dead_zone_list) {
+        grip_zone = (struct grip_zone_area *)pos;
+        for (i = 0 ; i < ARRAY_SIZE(sec_grip); i ++) {
+            if (!strncmp(grip_zone->name, sec_grip[i].name, GRIP_TAG_SIZE)) {
+                if (sec_grip[i].handle_func) {
+                    sec_grip[i].handle_func(grip_zone, true);
+                }
+            }
+        }
+    }
+
+    list_for_each(pos, &grip_info->condition_zone_list) {
+        grip_zone = (struct grip_zone_area *)pos;
+        for (i = 0 ; i < ARRAY_SIZE(sec_grip); i ++) {
+            if (!strncmp(grip_zone->name, sec_grip[i].name, GRIP_TAG_SIZE)) {
+                if (sec_grip[i].handle_func) {
+                    sec_grip[i].handle_func(grip_zone, true);
+                }
+            }
+        }
+    }
+
+    sec_set_no_handle_area(grip_info);
+    sec_set_condition_frame_limit(grip_info->condition_frame_limit);
+    sec_set_large_frame_limit(grip_info->large_frame_limit);
+    sec_set_large_corner_frame_limit(grip_info->large_corner_frame_limit);
+	sec_set_grip_touch_direction(grip_info->touch_dir);
+}
+
 static void sec_rate_white_list_ctrl(void *chip_data, int value)
 {
     struct chip_data_s6sy792 *chip_info = (struct chip_data_s6sy792 *)chip_data;
@@ -1679,13 +1749,14 @@ static void sec_rate_white_list_ctrl(void *chip_data, int value)
     }
 }
 
-static int sec_stop_filter_set(struct chip_data_s6sy792 *chip_info, int level, int usb_state)
+static int sec_stop_filter_set(void *chip_data, int level, int usb_state)
 {
+	struct chip_data_s6sy792 *chip_info = (struct chip_data_s6sy792 *)chip_data;
 	char buf[4] = {0x00, 0x00, 0x00, 0x00};
 	int ret = 0;
 
 	buf[3] = level; /*stop lock pointer with 0~100*/
-	TPD_INFO("now usb state is %d, level is %d, %s", usb_state, level, level < 255 ? "success" : "default");
+	TPD_INFO("now usb state is %d", usb_state);
 
 	ret = touch_i2c_write_block(chip_info->client, SEC_CMD_REG_STOP_LOCK_POINT, sizeof(buf), buf);
 	TPD_INFO("%s: set stop lock point value %d %s!\n", __func__, level, ret < 0 ? "failed" : "success");
@@ -1695,46 +1766,110 @@ static int sec_stop_filter_set(struct chip_data_s6sy792 *chip_info, int level, i
 
 static int sec_smooth_lv_set(void *chip_data, int level)
 {
-	struct chip_data_s6sy792 *chip_info = (struct chip_data_s6sy792 *)chip_data;
+    struct chip_data_s6sy792 *chip_info = (struct chip_data_s6sy792 *)chip_data;
+	struct touchpanel_data *ts = i2c_get_clientdata(chip_info->client);
 	int ret = 0;
 
-	ret = touch_i2c_write_byte(chip_info->client, SEC_CMD_REG_SMOOTH_LEVEL, level);
-	TPD_INFO("%s: set value: %d %s!\n", __func__, level, ret != 0 ? "failed" : "success");
+	if(chip_info->control_smooth_flag) {
+		ret = touch_i2c_write_byte(chip_info->client, 0x90, level);
+	} else {
+		ret = touch_i2c_write_byte(chip_info->client, SEC_CMD_REG_SMOOTH_LEVEL, level);
+	}
 
-	return ret;
+    TPD_INFO("%s: set value: %d %s!\n", __func__, level, ret != 0 ? "failed" : "success");
+
+	if((ts->is_usb_checked)&&(level < 255)) {
+	sec_stop_filter_set(chip_data, 35, ts->is_usb_checked);
+	}
+
+    return ret;
 }
 
 static int sec_sensitive_lv_set(void *chip_data, int level)
 {
-	struct chip_data_s6sy792 *chip_info = (struct chip_data_s6sy792 *)chip_data;
+    struct chip_data_s6sy792 *chip_info = (struct chip_data_s6sy792 *)chip_data;
 	struct touchpanel_data *ts = i2c_get_clientdata(chip_info->client);
-
-	char buf[4] = {0x00, 0x00, 0x00, 0x00};
+    char buf[4] = {0x00, 0x00, 0x00, 0x00};
 	int ret = 0;
 
-	buf[3] = level;
-	ret = touch_i2c_write_block(chip_info->client, SEC_CMD_SENSETIVE_CTRL, sizeof(buf), buf);
-	TPD_INFO("%s: set value: %d %s!\n", __func__, level, ret < 0 ? "failed" : "success");
+    buf[3] = level;
+	if(chip_info->control_smooth_flag) {
+		ret = touch_i2c_write_block(chip_info->client, 0x3F, sizeof(buf), buf);
+	} else {
+		ret = touch_i2c_write_block(chip_info->client, SEC_CMD_SENSETIVE_CTRL, sizeof(buf), buf);
+	}
+    TPD_INFO("%s: set value: %d %s!\n", __func__, level, ret < 0 ? "failed" : "success");
 
-	if(ts->is_usb_checked && level < 255) {
-		sec_stop_filter_set(chip_info, ts->stop_filter_set +10, ts->is_usb_checked);
-	} else if (!ts->is_usb_checked && level < 255) {
-		sec_stop_filter_set(chip_info, ts->stop_filter_set, ts->is_usb_checked);
-	} else if (level == 255) {
-		sec_stop_filter_set(chip_info, level, ts->is_usb_checked);
+	if((!ts->is_usb_checked) && (level < 255)) {
+		sec_stop_filter_set(chip_data, 25, ts->is_usb_checked);
 	}
 
-	return ret;
+    return ret;
+}
+
+static int sec_set_report_point_first(void *chip_data, uint32_t enable)
+{
+        struct chip_data_s6sy792 *chip_info = (struct chip_data_s6sy792 *)chip_data;
+        int ret = 0;
+		char buf = 0;
+
+	if (enable) { /* Peace elite */
+                buf = 0x01;
+                ret = touch_i2c_write_byte(chip_info->client, SEC_CMD_FILTER_CTRL, buf);
+				TPD_INFO("%s: Peace elite set value: %d %s!\n", __func__, buf, ret < 0 ? "failed" : "success");
+                if (ret < 0) {
+                        TPD_INFO("%s failed for game mode control\n", __func__);
+                        return ret;
+                }
+        } else { /* Honour of king */
+                buf = 0x00;
+                ret = touch_i2c_write_byte(chip_info->client, SEC_CMD_FILTER_CTRL, buf);
+				TPD_INFO("%s: Honour of king set value: %d %s!\n", __func__, buf, ret < 0 ? "failed" : "success");
+                if (ret < 0) {
+                        TPD_INFO("%s failed for disable game mode control\n", __func__);
+                        return ret;
+                }
+        }
+        return ret;
+}
+
+static int sec_get_report_point_first(void *chip_data)
+{
+        struct chip_data_s6sy792 *chip_info = (struct chip_data_s6sy792 *)chip_data;
+        int ret = 0;
+
+        ret = touch_i2c_read_byte(chip_info->client, SEC_CMD_FILTER_CTRL);
+        if (ret < 0) {
+		TPD_INFO("failed for get F51_CUSTOM_CTRL13\n");
+		return ret;
+	}
+        return ret;
 }
 
 static void sec_set_gesture_state(void *chip_data, int state)
 {
-        struct chip_data_s6sy792 *chip_info = (struct chip_data_s6sy792 *)chip_data;
+	struct chip_data_s6sy792 *chip_info = (struct chip_data_s6sy792 *)chip_data;
+	uint16_t state_inchip = 0;
 
-        TPD_INFO("%s state : %d \n", __func__, state);
-        chip_info->gesture_state = state;
+	SET_GESTURE_BIT(state, DouTap, state_inchip, GESTURE_DOUBLECLICK_BIT);
+	SET_GESTURE_BIT(state, UpVee, state_inchip, GESTURE_UP_V_BIT);
+	SET_GESTURE_BIT(state, DownVee, state_inchip, GESTURE_DOWN_V_BIT);
+	SET_GESTURE_BIT(state, LeftVee, state_inchip, GESTURE_LEFT_V_BIT);
+	SET_GESTURE_BIT(state, RightVee, state_inchip, GESTURE_RIGHT_V_BIT);
+	SET_GESTURE_BIT(state, Circle, state_inchip, GESTURE_O_BIT);
+	SET_GESTURE_BIT(state, Down2UpSwip, state_inchip, GESTURE_UP_BIT);
+	SET_GESTURE_BIT(state, Right2LeftSwip, state_inchip, GESTURE_LEFT_BIT);
+	SET_GESTURE_BIT(state, Left2RightSwip, state_inchip, GESTURE_RIGHT_BIT);
+	SET_GESTURE_BIT(state, Mgestrue, state_inchip, GESTURE_M_BIT);
+	SET_GESTURE_BIT(state, Wgestrue, state_inchip, GESTURE_W_BIT);
+	SET_GESTURE_BIT(state, SingleTap, state_inchip, GESTURE_SINGLE_TAP_BIT);
+
+	if (CHK_BIT(state, (1 << Up2DownSwip)) || CHK_BIT(state, (1 << DouSwip))) {
+		SET_BIT(state_inchip, (1 << GESTURE_DOWN_BIT));
+	}
+
+	chip_info->gesture_state = state_inchip;
 }
-
 
 static struct oplus_touchpanel_operations sec_ops = {
     .ftm_process                = sec_ftm_process,
@@ -1751,6 +1886,7 @@ static struct oplus_touchpanel_operations sec_ops = {
     //    .get_usb_state              = sec_get_usb_state,
     .set_touch_direction        = sec_set_touch_direction,
     .get_touch_direction        = sec_get_touch_direction,
+    .enable_kernel_grip         = sec_enable_kernel_grip,
     .enable_fingerprint         = sec_enable_fingerprint_mode,
     .screenon_fingerprint_info  = sec_get_fingerprint_info,
     .enable_gesture_mask        = sec_enable_gesture_mask,
@@ -1760,9 +1896,11 @@ static struct oplus_touchpanel_operations sec_ops = {
 #endif
     .smooth_lv_set              = sec_smooth_lv_set,
     .sensitive_lv_set           = sec_sensitive_lv_set,
+	.set_report_point_first 	= sec_set_report_point_first,
+	.get_report_point_first 	= sec_get_report_point_first,
     .calibrate                  = sec_calibrate,
     .get_cal_status             = sec_get_cal_status,
-	.set_gesture_state         = sec_set_gesture_state,
+	.set_gesture_state          = sec_set_gesture_state,
 };
 /********* End of implementation of oplus_touchpanel_operations callbacks**********************/
 
@@ -2063,16 +2201,21 @@ static void sec_main_register_read(struct seq_file *s, void *chip_data)
     state = touch_i2c_read_byte(chip_info->client, SEC_CMD_GAME_MODE);
     seq_printf(s, "game mode state: 0x%02x\n", state);
 
-    state = touch_i2c_read_byte(chip_info->client, SEC_CMD_REG_SMOOTH_LEVEL);
-    seq_printf(s, "smooth level state: 0x%02x\n", state);
+	if(chip_info->control_smooth_flag) {
+		state = touch_i2c_read_byte(chip_info->client, 0x90);
+		seq_printf(s, "smooth level state: 0x%02x\n", state);
 
-    memset(buf, 0, 4);
-    touch_i2c_read_block(chip_info->client, SEC_CMD_SENSETIVE_CTRL, 4, buf);
-    seq_printf(s, "sensetive level state: 0x%02x 0x%02x 0x%02x 0x%02x.\n", buf[0], buf[1], buf[2], buf[3]);
+		memset(buf, 0, 4);
+		touch_i2c_read_block(chip_info->client, 0x3F, 4, buf);
+		seq_printf(s, "sensetive level state: 0x%02x 0x%02x 0x%02x 0x%02x.\n", buf[0], buf[1], buf[2], buf[3]);
+	} else {
+		state = touch_i2c_read_byte(chip_info->client, SEC_CMD_REG_SMOOTH_LEVEL);
+		seq_printf(s, "smooth level state: 0x%02x\n", state);
 
-	memset(buf, 0, 4);
-	touch_i2c_read_block(chip_info->client, SEC_CMD_REG_STOP_LOCK_POINT, 4, buf);
-	seq_printf(s, "stop lock point state: 0x%02x 0x%02x 0x%02x 0x%02x.\n", buf[0], buf[1], buf[2], buf[3]);
+		memset(buf, 0, 4);
+		touch_i2c_read_block(chip_info->client, SEC_CMD_SENSETIVE_CTRL, 4, buf);
+		seq_printf(s, "sensetive level state: 0x%02x 0x%02x 0x%02x 0x%02x.\n", buf[0], buf[1], buf[2], buf[3]);
+	}
 
     memset(buf, 0, 4);
     touch_i2c_read_block(chip_info->client, SEC_READ_ID, 3, buf);
@@ -2224,6 +2367,7 @@ static struct debug_info_proc_operations debug_info_proc_ops = {
     .self_raw_read      = sec_self_raw_read,
     .main_register_read = sec_main_register_read,
     .reserve_read       = sec_reserve_read,
+	.baseline_blackscreen_read = sec_baseline_read,
 };
 
 static void sec_start_aging_test(void *chip_data)
@@ -2386,7 +2530,7 @@ ERR_EXIT:
 static int sec_execute_p2ptest(struct seq_file *s, struct chip_data_s6sy792 *chip_info, struct sec_testdata *sec_testdata)
 {
     int rc;
-    u8 tpara[3] = {0x0F, 0x00, 0x00};
+	u8 tpara[3] = {0x0F, 0x00, 0x00};
 
     TPD_INFO("%s: P2P test start!\n", __func__);
     rc = touch_i2c_write_block(chip_info->client, SEC_CMD_SET_P2PTEST_MODE, 3, tpara);
@@ -2470,8 +2614,6 @@ static void sec_auto_test(struct seq_file *s, void *chip_data, struct sec_testda
     if (eint_count == 10) {
         TPD_INFO("error :  TP EINT PIN direct short!\n");
         seq_printf(s, "eint_status is low, TP EINT direct short\n");
-		err_cnt++;
-		tp_healthinfo_report(chip_info->monitor_data_v2, HEALTH_TEST_AUTO, &err_cnt);
         return;
     }
     touch_i2c_write_byte(chip_info->client, SEC_CMD_INTERRUPT_SWITCH, 0);   //enable interrupt
@@ -2486,8 +2628,6 @@ static void sec_auto_test(struct seq_file *s, void *chip_data, struct sec_testda
     if (!pRead) {
         TPD_INFO("kzalloc space failed\n");
         seq_printf(s, "kzalloc space failed\n");
-		err_cnt++;
-		tp_healthinfo_report(chip_info->monitor_data_v2, HEALTH_TEST_AUTO, &err_cnt);
         return;
     }
 
@@ -2888,8 +3028,6 @@ ERR_OUT:
     seq_printf(s, "FW:0x%llx\n", sec_testdata->TP_FW);
     seq_printf(s, "%d error(s). %s\n", err_cnt, err_cnt ? "" : "All test passed.");
     TPD_INFO(" TP auto test %d error(s). %s\n", err_cnt, err_cnt ? "" : "All test passed.");
-
-	tp_healthinfo_report(chip_info->monitor_data_v2, HEALTH_TEST_AUTO, &err_cnt);
 }
 
 static int sec_get_verify_result(struct chip_data_s6sy792 *chip_info)
@@ -2989,6 +3127,450 @@ static bool sec_get_cal_status(struct seq_file *s, void *chip_data)
 
     return chip_info->cal_needed;
 }
+
+/*********** Start of kernel grip callbacks*************************/
+static int ver_bottom_large_handle_func(struct grip_zone_area *grip_zone, bool enable)
+{
+    int ret = 0;
+    u8 area_size[5] = {CORNER_LONG_PRESS_ZONE, 0, 0, 0, 0};
+
+    if (!g_chip_info || !grip_zone || *g_chip_info->in_suspend) {
+        return -1;
+    }
+
+    if (enable) {
+        if ((grip_zone->grip_side >> TYPE_LONG_CORNER_SIDE) & 0x01) {
+            area_size[1] = (grip_zone->x_width >> 8) & 0xFF;
+            area_size[2] = grip_zone->x_width & 0xFF;
+            area_size[3] = (grip_zone->y_width >> 8) & 0xFF;
+            area_size[4] = grip_zone->y_width & 0xFF;
+        } else if ((grip_zone->grip_side >> TYPE_SHORT_CORNER_SIDE) & 0x01) {
+            area_size[1] = (grip_zone->y_width >> 8) & 0xFF;
+            area_size[2] = grip_zone->y_width & 0xFF;
+            area_size[3] = (grip_zone->x_width >> 8) & 0xFF;
+            area_size[4] = grip_zone->x_width & 0xFF;
+        } else if ((grip_zone->grip_side >> TYPE_LONG_SIDE) & 0x01) {
+            area_size[1] = (grip_zone->x_width >> 8) & 0xFF;
+            area_size[2] = grip_zone->x_width & 0xFF;
+        } else if ((grip_zone->grip_side >> TYPE_SHORT_SIDE) & 0x01) {
+            area_size[1] = (grip_zone->y_width >> 8) & 0xFF;
+            area_size[2] = grip_zone->y_width & 0xFF;
+        }
+    }
+
+    ret = touch_i2c_write_byte(g_chip_info->client, SEC_CMD_GRIP_DIRECTION, 0x00);
+    ret |= touch_i2c_write_block(g_chip_info->client, SEC_CMD_GRIP_AREA, sizeof(area_size), area_size);
+    ret |= touch_i2c_write_byte(g_chip_info->client, SEC_CMD_GRIP_DIRECTION, g_chip_info->touch_direction);
+    TPD_DETAIL("%s: cmd write is : 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x.\n", __func__, SEC_CMD_GRIP_AREA,
+               area_size[0], area_size[1], area_size[2], area_size[3], area_size[4]);
+    TPD_DETAIL("%s: %s area size is %s %s in fw : [%d, %d] [%d %d].\n", __func__,
+               grip_zone->name, ret < 0 ? "failed" : "success", enable ? "change" : "remove", grip_zone->start_x, grip_zone->start_y,
+               grip_zone->x_width, grip_zone->y_width);
+
+    return ret;
+}
+
+static int hor_corner_large_handle_func(struct grip_zone_area *grip_zone, bool enable)
+{
+    int ret = 0;
+    u8 area_size[5] = {CORNER_LONG_PRESS_ZONE, 0, 0, 0, 0};
+
+    if (!g_chip_info || !grip_zone || *g_chip_info->in_suspend) {
+        return -1;
+    }
+
+    if (enable) {
+        if ((grip_zone->grip_side >> TYPE_LONG_CORNER_SIDE) & 0x01) {
+            area_size[1] = (grip_zone->x_width >> 8) & 0xFF;
+            area_size[2] = grip_zone->x_width & 0xFF;
+            area_size[3] = (grip_zone->y_width >> 8) & 0xFF;
+            area_size[4] = grip_zone->y_width & 0xFF;
+        } else if ((grip_zone->grip_side >> TYPE_SHORT_CORNER_SIDE) & 0x01) {
+            area_size[1] = (grip_zone->y_width >> 8) & 0xFF;
+            area_size[2] = grip_zone->y_width & 0xFF;
+            area_size[3] = (grip_zone->x_width >> 8) & 0xFF;
+            area_size[4] = grip_zone->x_width & 0xFF;
+        } else if ((grip_zone->grip_side >> TYPE_LONG_SIDE) & 0x01) {
+            area_size[1] = (grip_zone->x_width >> 8) & 0xFF;
+            area_size[2] = grip_zone->x_width & 0xFF;
+        } else if ((grip_zone->grip_side >> TYPE_SHORT_SIDE) & 0x01) {
+            area_size[1] = (grip_zone->y_width >> 8) & 0xFF;
+            area_size[2] = grip_zone->y_width & 0xFF;
+        }
+    }
+
+    ret = touch_i2c_write_byte(g_chip_info->client, SEC_CMD_GRIP_DIRECTION, 0x01);
+    ret |= touch_i2c_write_block(g_chip_info->client, SEC_CMD_GRIP_AREA, sizeof(area_size), area_size);
+    ret |= touch_i2c_write_byte(g_chip_info->client, SEC_CMD_GRIP_DIRECTION, g_chip_info->touch_direction);
+    TPD_DETAIL("%s: cmd write is : 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x.\n", __func__, SEC_CMD_GRIP_AREA,
+               area_size[0], area_size[1], area_size[2], area_size[3], area_size[4]);
+    TPD_DETAIL("%s: %s area size is %s %s in fw : [%d, %d] [%d %d].\n", __func__,
+               grip_zone->name, ret < 0 ? "failed" : "success", enable ? "change" : "remove", grip_zone->start_x, grip_zone->start_y,
+               grip_zone->x_width, grip_zone->y_width);
+
+    return ret;
+}
+
+static int long_size_dead_zone_handle_func(struct grip_zone_area *grip_zone, bool enable)
+{
+    int ret = 0;
+    u8 area_size[5] = {DEAD_ZONE_TYPE_1, 0, 0, 0xFF, 0xFF};
+
+    if (!g_chip_info || !grip_zone || *g_chip_info->in_suspend) {
+        return -1;
+    }
+
+    if (enable) {
+        if ((grip_zone->grip_side >> TYPE_LONG_SIDE) & 0x01) {
+            area_size[1] = (grip_zone->x_width >> 8) & 0xFF;
+            area_size[2] = grip_zone->x_width & 0xFF;
+        } else if ((grip_zone->grip_side >> TYPE_SHORT_SIDE) & 0x01) {
+            area_size[1] = (grip_zone->y_width >> 8) & 0xFF;
+            area_size[2] = grip_zone->y_width & 0xFF;
+        }
+    }
+
+    ret = touch_i2c_write_block(g_chip_info->client, SEC_CMD_GRIP_AREA, sizeof(area_size), area_size);
+    TPD_DETAIL("%s: cmd write is : 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x.\n", __func__, SEC_CMD_GRIP_AREA,
+               area_size[0], area_size[1], area_size[2], area_size[3], area_size[4]);
+    TPD_DETAIL("%s: %s area size is %s %s in fw : [%d, %d] [%d %d].\n", __func__,
+               grip_zone->name, ret < 0 ? "failed" : "success", enable ? "change" : "remove", grip_zone->start_x, grip_zone->start_y,
+               grip_zone->x_width, grip_zone->y_width);
+
+    return ret;
+}
+
+static int short_size_dead_zone_handle_func(struct grip_zone_area *grip_zone, bool enable)
+{
+    int ret = 0;
+    u8 area_size[5] = {DEAD_ZONE_TYPE_1, 0xFF, 0xFF, 0, 0};
+
+    if (!g_chip_info || !grip_zone || *g_chip_info->in_suspend) {
+        return -1;
+    }
+
+    if (enable) {
+        if ((grip_zone->grip_side >> TYPE_LONG_SIDE) & 0x01) {
+            area_size[3] = (grip_zone->x_width >> 8) & 0xFF;
+            area_size[4] = grip_zone->x_width & 0xFF;
+        } else if ((grip_zone->grip_side >> TYPE_SHORT_SIDE) & 0x01) {
+            area_size[3] = (grip_zone->y_width >> 8) & 0xFF;
+            area_size[4] = grip_zone->y_width & 0xFF;
+        }
+    }
+
+    ret = touch_i2c_write_block(g_chip_info->client, SEC_CMD_GRIP_AREA, sizeof(area_size), area_size);
+    TPD_DETAIL("%s: cmd write is : 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x.\n", __func__, SEC_CMD_GRIP_AREA,
+               area_size[0], area_size[1], area_size[2], area_size[3], area_size[4]);
+    TPD_DETAIL("%s: %s area size is %s %s in fw : [%d, %d] [%d %d].\n", __func__,
+               grip_zone->name, ret < 0 ? "failed" : "success", enable ? "change" : "remove", grip_zone->start_x, grip_zone->start_y,
+               grip_zone->x_width, grip_zone->y_width);
+
+    return ret;
+}
+
+static int long_size_condtion_zone_handle_func(struct grip_zone_area *grip_zone, bool enable)
+{
+    int ret = 0;
+    u8 area_size[5] = {LONG_PRESS_ZONE, 0, 0, 0xFF, 0xFF};
+    u8 exit_thd[3] = {LONG_PRESS_ZONE, 0xFF, 0};
+
+    if (!g_chip_info || !grip_zone || *g_chip_info->in_suspend) {
+        return -1;
+    }
+
+    if (enable) {
+        if ((grip_zone->grip_side >> TYPE_LONG_SIDE) & 0x01) {
+            area_size[1] = (grip_zone->x_width >> 8) & 0xFF;
+            area_size[2] = grip_zone->x_width & 0xFF;
+        } else if ((grip_zone->grip_side >> TYPE_SHORT_SIDE) & 0x01) {
+            area_size[1] = (grip_zone->y_width >> 8) & 0xFF;
+            area_size[2] = grip_zone->y_width & 0xFF;
+        }
+    }
+
+    ret = touch_i2c_write_block(g_chip_info->client, SEC_CMD_GRIP_AREA, sizeof(area_size), area_size);
+    TPD_DETAIL("%s: cmd write is : 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x.\n", __func__, SEC_CMD_GRIP_AREA,
+               area_size[0], area_size[1], area_size[2], area_size[3], area_size[4]);
+    TPD_DETAIL("%s: %s area size is %s %s in fw : [%d, %d] [%d %d].\n", __func__,
+               grip_zone->name, ret < 0 ? "failed" : "success", enable ? "change" : "remove", grip_zone->start_x, grip_zone->start_y,
+               grip_zone->x_width, grip_zone->y_width);
+
+    if (enable) {
+        exit_thd[2] = grip_zone->exit_thd & 0xFF;
+        ret = touch_i2c_write_block(g_chip_info->client, SEC_CMD_GRIP_PARA, sizeof(exit_thd), exit_thd);
+        TPD_DETAIL("%s: cmd is : 0x%02x, 0x%02x, 0x%02x, 0x%02x.\n", __func__, SEC_CMD_GRIP_PARA, exit_thd[0], exit_thd[1], exit_thd[2]);
+        TPD_DETAIL("%s: %s exit thd is %s change in fw : %d.\n", __func__,
+                   grip_zone->name, ret < 0 ? "failed" : "success", grip_zone->exit_thd);
+    }
+
+    return ret;
+}
+
+static int short_size_condtion_zone_handle_func(struct grip_zone_area *grip_zone, bool enable)
+{
+    int ret = 0;
+    u8 area_size[5] = {LONG_PRESS_ZONE, 0xFF, 0xFF, 0, 0,};
+
+    if (!g_chip_info || !grip_zone || *g_chip_info->in_suspend) {
+        return -1;
+    }
+
+    if (enable) {
+        if ((grip_zone->grip_side >> TYPE_LONG_SIDE) & 0x01) {
+            area_size[3] = (grip_zone->x_width >> 8) & 0xFF;
+            area_size[4] = grip_zone->x_width & 0xFF;
+        } else if ((grip_zone->grip_side >> TYPE_SHORT_SIDE) & 0x01) {
+            area_size[3] = (grip_zone->y_width >> 8) & 0xFF;
+            area_size[4] = grip_zone->y_width & 0xFF;
+        }
+    }
+
+    ret = touch_i2c_write_block(g_chip_info->client, SEC_CMD_GRIP_AREA, sizeof(area_size), area_size);
+    TPD_DETAIL("%s: cmd write is : 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x.\n", __func__, SEC_CMD_GRIP_AREA,
+               area_size[0], area_size[1], area_size[2], area_size[3], area_size[4]);
+    TPD_DETAIL("%s: %s area size is %s %s in fw : [%d, %d] [%d %d].\n", __func__,
+               grip_zone->name, ret < 0 ? "failed" : "success", enable ? "change" : "remove", grip_zone->start_x, grip_zone->start_y,
+               grip_zone->x_width, grip_zone->y_width);
+
+    return ret;
+}
+
+static int long_size_large_zone_handle_func(struct grip_zone_area *grip_zone, bool enable)
+{
+    int ret = 0;
+    u8 area_size[5] = {LARGE_TOUCH_REJECTION, 0, 0, 0xFF, 0xFF};
+
+    if (!g_chip_info || !grip_zone || *g_chip_info->in_suspend) {
+        return -1;
+    }
+
+    if (enable) {
+        if ((grip_zone->grip_side >> TYPE_LONG_SIDE) & 0x01) {
+            area_size[1] = (grip_zone->x_width >> 8) & 0xFF;
+            area_size[2] = grip_zone->x_width & 0xFF;
+        } else if ((grip_zone->grip_side >> TYPE_SHORT_SIDE) & 0x01) {
+            area_size[1] = (grip_zone->y_width >> 8) & 0xFF;
+            area_size[2] = grip_zone->y_width & 0xFF;
+        }
+    }
+
+    ret = touch_i2c_write_block(g_chip_info->client, SEC_CMD_GRIP_AREA, sizeof(area_size), area_size);
+    TPD_DETAIL("%s: cmd write is : 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x.\n", __func__, SEC_CMD_GRIP_AREA,
+               area_size[0], area_size[1], area_size[2], area_size[3], area_size[4]);
+    TPD_DETAIL("%s: %s area size is %s %s in fw : [%d, %d] [%d %d].\n", __func__,
+               grip_zone->name, ret < 0 ? "failed" : "success", enable ? "change" : "remove", grip_zone->start_x, grip_zone->start_y,
+               grip_zone->x_width, grip_zone->y_width);
+
+    return ret;
+}
+
+static int short_size_large_zone_handle_func(struct grip_zone_area *grip_zone, bool enable)
+{
+    int ret = 0;
+    u8 area_size[5] = {LARGE_TOUCH_REJECTION, 0xFF, 0xFF, 0, 0};
+
+    if (!g_chip_info || !grip_zone || *g_chip_info->in_suspend) {
+        return -1;
+    }
+
+    if (enable) {
+        if ((grip_zone->grip_side >> TYPE_LONG_SIDE) & 0x01) {
+            area_size[3] = (grip_zone->x_width >> 8) & 0xFF;
+            area_size[4] = grip_zone->x_width & 0xFF;
+        } else if ((grip_zone->grip_side >> TYPE_SHORT_SIDE) & 0x01) {
+            area_size[3] = (grip_zone->y_width >> 8) & 0xFF;
+            area_size[4] = grip_zone->y_width & 0xFF;
+        }
+    }
+
+    ret = touch_i2c_write_block(g_chip_info->client, SEC_CMD_GRIP_AREA, sizeof(area_size), area_size);
+    TPD_DETAIL("%s: cmd write is : 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x.\n", __func__, SEC_CMD_GRIP_AREA,
+               area_size[0], area_size[1], area_size[2], area_size[3], area_size[4]);
+    TPD_DETAIL("%s: %s area size is %s %s in fw : [%d, %d] [%d %d].\n", __func__,
+               grip_zone->name, ret < 0 ? "failed" : "success", enable ? "change" : "remove", grip_zone->start_x, grip_zone->start_y,
+               grip_zone->x_width, grip_zone->y_width);
+
+    return ret;
+}
+
+static int sec_set_fw_grip_area(struct grip_zone_area *grip_zone, bool enable)
+{
+    int ret = 0, i = 0;
+
+    if (!g_chip_info || !grip_zone || *g_chip_info->in_suspend) {
+        return -1;
+    }
+
+    for (i = 0 ; i < ARRAY_SIZE(sec_grip); i ++) {
+        if (!strncmp(grip_zone->name, sec_grip[i].name, GRIP_TAG_SIZE)) {
+            if (sec_grip[i].handle_func) {
+                sec_grip[i].handle_func(grip_zone, enable);
+            }
+            break;
+        }
+    }
+
+    if (i == ARRAY_SIZE(sec_grip)) {
+        TPD_DETAIL("%s: %s is not support in fw.\n", __func__, grip_zone->name);
+        return 0;
+    } else {
+        TPD_INFO("%s: %s %s in fw : [%d, %d] [%d %d] %d %d %d.\n", __func__,
+                 grip_zone->name, enable ? "modify" : "remove", grip_zone->start_x, grip_zone->start_y,
+                 grip_zone->x_width, grip_zone->y_width, grip_zone->exit_thd,
+                 grip_zone->support_dir, grip_zone->grip_side);
+    }
+
+    return ret;
+}
+
+static int sec_set_no_handle_area(struct kernel_grip_info *grip_info)
+{
+    int ret = 0;
+    u8 edge_range[4] = {0}; //edge sereen function setting, y1,y2,direction
+
+    if (!g_chip_info || !grip_info || *g_chip_info->in_suspend) {
+        return -1;
+    }
+
+    // only portrait mode need set this area
+    if (g_chip_info->touch_direction == 0) {
+        /*
+        edge_range[0] = (grip_info->no_handle_y1 >> 4) & 0xFF;
+        edge_range[1] = (grip_info->no_handle_y1 & 0x0F) << 4 | ((grip_info->no_handle_y2 >> 8) & 0x0F);
+        edge_range[2] = grip_info->no_handle_y2 & 0xFF;
+        if (!grip_info->no_handle_dir) {
+            edge_range[3] = 0x01;
+        } else {
+            edge_range[3] = 0x00;
+        }
+        */
+    }
+
+    ret = touch_i2c_write_block(g_chip_info->client, SEC_CMD_EDGE_SCREEN, sizeof(edge_range), edge_range);
+    TPD_DETAIL("%s: cmd write is : 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x.\n", __func__, SEC_CMD_EDGE_SCREEN,
+               edge_range[0], edge_range[1], edge_range[2], edge_range[3]);
+    TPD_DETAIL("%s: No handle area is %s change in fw : [%d, %d, %d].\n", __func__, ret < 0 ? "failed" : "success",
+               grip_info->no_handle_dir, grip_info->no_handle_y1, grip_info->no_handle_y2);
+
+    return ret;
+}
+
+static int sec_set_condition_frame_limit(int frame_limit)
+{
+    int ret = 0;
+    u8 press_time[3] = {LONG_PRESS_ZONE, 0, 0xFF};
+
+    if (!g_chip_info || *g_chip_info->in_suspend) {
+        return -1;
+    }
+
+    press_time[1] = frame_limit;
+
+    ret = touch_i2c_write_block(g_chip_info->client, SEC_CMD_GRIP_PARA, sizeof(press_time), press_time);
+    TPD_DETAIL("%s: cmd write is : 0x%02x, 0x%02x, 0x%02x, 0x%02x.\n", __func__, SEC_CMD_GRIP_PARA,
+               press_time[0], press_time[1], press_time[2]);
+    TPD_DETAIL("%s: Condition frame limit is %s change in fw : frame_limit = %d.\n", __func__, ret < 0 ? "failed" : "success", frame_limit);
+
+    return ret;
+}
+
+static int sec_set_large_frame_limit(int frame_limit)
+{
+    int ret = 0;
+    u8 press_time[3] = {LARGE_TOUCH_REJECTION, 0, 0xFF};
+
+    if (!g_chip_info || *g_chip_info->in_suspend) {
+        return -1;
+    }
+
+    press_time[1] = frame_limit;
+
+    ret = touch_i2c_write_block(g_chip_info->client, SEC_CMD_GRIP_PARA, sizeof(press_time), press_time);
+    TPD_DETAIL("%s: cmd write is : 0x%02x, 0x%02x, 0x%02x, 0x%02x.\n", __func__, SEC_CMD_GRIP_PARA,
+               press_time[0], press_time[1], press_time[2]);
+    TPD_DETAIL("%s: large frame limit is %s change in fw : frame_limit = %d.\n", __func__, ret < 0 ? "failed" : "success", frame_limit);
+
+    return ret;
+}
+
+static int sec_set_large_corner_frame_limit(int frame_limit)
+{
+    int ret = 0;
+    u8 press_time[3] = {CORNER_LONG_PRESS_ZONE, 0, 0xFF};
+
+    if (!g_chip_info || *g_chip_info->in_suspend) {
+        return -1;
+    }
+
+    press_time[1] = frame_limit;
+
+    ret = touch_i2c_write_block(g_chip_info->client, SEC_CMD_GRIP_PARA, sizeof(press_time), press_time);
+    TPD_DETAIL("%s: cmd write is : 0x%02x, 0x%02x, 0x%02x, 0x%02x.\n", __func__, SEC_CMD_GRIP_PARA,
+               press_time[0], press_time[1], press_time[2]);
+    TPD_DETAIL("%s: large corner frame limit is %s change in fw : frame_limit = %d.\n", __func__, ret < 0 ? "failed" : "success", frame_limit);
+
+    return ret;
+}
+
+static int sec_set_large_thd(int large_thd)
+{
+    int ret = 0;
+    u8 touch_size[3] = {LARGE_TOUCH_REJECTION, 0xFF, 0};
+
+    if (!g_chip_info || *g_chip_info->in_suspend) {
+        return -1;
+    }
+
+    touch_size[2] = large_thd;
+
+    ret = touch_i2c_write_block(g_chip_info->client, SEC_CMD_GRIP_PARA, sizeof(touch_size), touch_size);
+    TPD_DETAIL("%s: cmd write is : 0x%02x, 0x%02x, 0x%02x, 0x%02x.\n", __func__, SEC_CMD_GRIP_PARA,
+               touch_size[0], touch_size[1], touch_size[2]);
+    TPD_DETAIL("%s: large ver thd is %s change in fw : large_thd = %d.\n", __func__, ret < 0 ? "failed" : "success", large_thd);
+
+    return ret;
+}
+
+static void sec_set_grip_touch_direction(uint8_t dir)
+{
+    int ret = -1;
+    u8 buf = 0x00; //direction enable, landscape grip area
+
+    if (!g_chip_info) {
+        return;
+    }
+
+    g_chip_info->touch_direction = dir;
+
+    if (*g_chip_info->in_suspend) {
+        TPD_INFO("%s: set touch_direction in suspend: %d!\n", __func__, g_chip_info->touch_direction);
+        return;
+    }
+
+    buf = dir;
+    ret = touch_i2c_write_byte(g_chip_info->client, SEC_CMD_GRIP_DIRECTION, buf);
+
+    //disable wet mode while changing to horizontal
+    ret |= touch_i2c_write_byte(g_chip_info->client, SEC_CMD_WET_SWITCH, !!g_chip_info->touch_direction);
+
+    TPD_INFO("%s: set touch_direction: %d %s!\n", __func__, g_chip_info->touch_direction, ret < 0 ? "failed" : "success");
+}
+
+static struct fw_grip_operations sec_fw_grip_op = {
+    .set_fw_grip_area             = sec_set_fw_grip_area,
+    .set_touch_direction          = sec_set_grip_touch_direction,
+    .set_no_handle_area           = sec_set_no_handle_area,
+    .set_condition_frame_limit    = sec_set_condition_frame_limit,
+    .set_large_frame_limit        = sec_set_large_frame_limit,
+    .set_large_corner_frame_limit = sec_set_large_corner_frame_limit,
+    .set_large_ver_thd            = sec_set_large_thd,
+};
+
+static struct fw_grip_operations sec_fw_touch_dir_op = {
+	.set_touch_direction          = sec_set_grip_touch_direction,
+};
+/*********** end of kernel grip callbacks*************************/
 
 static struct sec_proc_operations sec_proc_ops = {
     .auto_test          = sec_auto_test,
@@ -3238,10 +3820,8 @@ static int sec_tp_probe(struct i2c_client *client, const struct i2c_device_id *i
     struct chip_data_s6sy792 *chip_info = NULL;
     struct touchpanel_data *ts = NULL;
     int ret = -1;
-	u64 time_counter = 0;
 
     TPD_INFO("%s  is called\n", __func__);
-	reset_healthinfo_time_counter(&time_counter);
 
     /* 1. alloc chip info */
     chip_info = kzalloc(sizeof(struct chip_data_s6sy792), GFP_KERNEL);
@@ -3286,17 +3866,19 @@ static int sec_tp_probe(struct i2c_client *client, const struct i2c_device_id *i
     ts->ts_ops = &sec_ops;
     ts->aging_test_ops = &aging_test_proc_ops;
     g_chip_info = chip_info;
+	ts->calibration_support = true;
 
     /* 5. register common touch device*/
     ret = register_common_touch_device(ts);
     if (ret < 0) {
         goto err_register_driver;
     }
+	chip_info->black_gesture_indep = ts->black_gesture_indep_support;
     chip_info->irq_requested = true;
     ts->tp_suspend_order = TP_LCD_SUSPEND;
     chip_info->auto_test_need_cal_support = of_property_read_bool(ts->dev->of_node, "auto_test_need_cal_support");
-	chip_info->black_gesture_indep = ts->black_gesture_indep_support;
-	chip_info->monitor_data_v2 = &ts->monitor_data_v2;
+	chip_info->control_smooth_flag = of_property_read_bool(ts->dev->of_node, "control_smooth_flag");
+
     /* 6. create debug interface*/
     sec_raw_device_init(ts);
     sec_create_proc(ts, &sec_proc_ops);
@@ -3305,9 +3887,14 @@ static int sec_tp_probe(struct i2c_client *client, const struct i2c_device_id *i
     sec_init_oplus_apk_op(ts);
 #endif // end of CONFIG_OPLUS_TP_APK
 
-	if (ts->health_monitor_v2_support) {
-		tp_healthinfo_report(&ts->monitor_data_v2, HEALTH_PROBE, &time_counter);
-	}
+    /* 7. kernel grip interface init*/
+    if (ts->grip_info) {
+        if (ts->grip_info->grip_handle_in_fw) {
+            ts->grip_info->fw_ops = &sec_fw_grip_op;
+        } else {
+		ts->grip_info->fw_ops = &sec_fw_touch_dir_op;
+        }
+    }
 
     TPD_INFO("%s, probe normal end\n", __func__);
     // update firmware

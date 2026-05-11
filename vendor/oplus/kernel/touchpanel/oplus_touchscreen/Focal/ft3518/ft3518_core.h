@@ -36,7 +36,6 @@
 
 #define FTS_REG_SMOOTH_LEVEL                    0x85
 #define FTS_REG_GAME_MODE_EN                    0x86
-#define FTS_REG_HIGH_FRAME_TIME                 0x8A
 #define FTS_REG_REPORT_RATE                     0x88/*0x12:180hz, 0x0C:120hz*/
 #define FTS_REG_CHARGER_MODE_EN                 0x8B
 #define FTS_REG_EDGE_LIMIT                      0x8C
@@ -233,16 +232,15 @@ struct fts_ts_data {
     struct touchpanel_data *ts;
     struct monitor_data_v2 *monitor_data_v2;
 	struct exception_data  *exception_data;                /*health monitor data*/
-    int gesture_state;
-    bool black_gesture_indep;
     bool high_resolution_support;
 	bool high_resolution_support_x8;
-	bool need_pinctrl_pull_up_reset;
+        bool read_buffer_support;
+	int gesture_state;
+	bool black_gesture_indep;
 };
 
 
 extern struct fts_ts_data *fts_data;
 
 int fts_test_entry(struct fts_ts_data *ts_data);
-int fts_rstpin_reset(void *chip_data);
 #endif /*__FT3518_CORE_H__*/

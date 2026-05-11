@@ -323,7 +323,7 @@ static int debug_mode_get_data(struct file_buffer *file, u8 type, u32 frame_coun
 
         mutex_lock(&ilits->touch_mutex);
         memset(file->ptr, 0, file->max_size);
-        file->wlen += snprintf(file->ptr + file->wlen, (file->max_size - file->wlen), "\n\nFrame%hu,",
+        file->wlen += snprintf(file->ptr + file->wlen, (file->max_size - file->wlen), "\n\nFrame%d,",
                                write_index);
 
         for (j = 0; j < col; j++) {
@@ -631,7 +631,7 @@ static ssize_t ilitek_proc_rw_tp_reg_read(struct file *pFile, char __user *buf, 
 
         ILI_INFO("[WRITE]:addr = 0x%06x, write = 0x%08x, len = %d byte\n", addr, write_data, write_len);
         len += snprintf(g_user_buf + len, USER_STR_BUFF - len,
-                        "WRITE:addr = 0x%06x, write = 0x%08x, len =%u byte\n", addr, write_data, write_len);
+                        "WRITE:addr = 0x%06x, write = 0x%08x, len =%d byte\n", addr, write_data, write_len);
     }
 
     if (stop_mcu == mcu_on) {
@@ -700,7 +700,6 @@ static ssize_t ilitek_proc_debug_switch_read(struct file *pFile, char __user *bu
 
     memset(g_user_buf, 0, USER_STR_BUFF * sizeof(unsigned char));
     mutex_lock(&ilits->debug_read_mutex);
-	mutex_lock(&ilits->debug_mutex);
     open = !ilits->dnp;
     ilitek_debug_node_buff_control(open);
     size = snprintf(g_user_buf, USER_STR_BUFF * sizeof(unsigned char), "dnp : %s\n",
@@ -711,7 +710,6 @@ static ssize_t ilitek_proc_debug_switch_read(struct file *pFile, char __user *bu
         ILI_ERR("Failed to copy data to user space\n");
     }
 
-    mutex_unlock(&ilits->debug_mutex);
     mutex_unlock(&ilits->debug_read_mutex);
     return size;
 }
@@ -1054,23 +1052,23 @@ static ssize_t ilitek_node_ver_info_read(struct file *filp, char __user *buff, s
     mutex_lock(&ilits->touch_mutex);
     memset(g_user_buf, 0, USER_STR_BUFF * sizeof(unsigned char));
     len += snprintf(g_user_buf + len, USER_STR_BUFF - len, "CHIP ID = %x\n", ilits->chip->id);
-    len += snprintf(g_user_buf + len, USER_STR_BUFF - len, "FW version = %u.%u.%u.%u\n",
+    len += snprintf(g_user_buf + len, USER_STR_BUFF - len, "FW version = %d.%d.%d.%d\n",
                     ilits->chip->fw_ver >> 24, (ilits->chip->fw_ver >> 16) & 0xFF,
                     (ilits->chip->fw_ver >> 8) & 0xFF, ilits->chip->fw_ver & 0xFF);
-    len += snprintf(g_user_buf + len, USER_STR_BUFF - len, "FW MP version = %u.%u.%u.%u\n",
+    len += snprintf(g_user_buf + len, USER_STR_BUFF - len, "FW MP version = %d.%d.%d.%d\n",
                     ilits->chip->fw_mp_ver >> 24, (ilits->chip->fw_mp_ver >> 16) & 0xFF,
                     (ilits->chip->fw_mp_ver >> 8) & 0xFF, ilits->chip->fw_mp_ver & 0xFF);
 
     if (ilits->protocol->core_ver_len == P5_X_CORE_VER_THREE_LENGTH)
-        len += snprintf(g_user_buf + len, USER_STR_BUFF - len, "Core version = %u.%u.%u\n",
+        len += snprintf(g_user_buf + len, USER_STR_BUFF - len, "Core version = %d.%d.%d\n",
                         (ilits->chip->core_ver >> 24) & 0xFF, (ilits->chip->core_ver >> 16) & 0xFF,
                         (ilits->chip->core_ver >> 8) & 0xFF);
     else
-        len += snprintf(g_user_buf + len, USER_STR_BUFF - len, "Core version = %u.%u.%u.%u\n",
+        len += snprintf(g_user_buf + len, USER_STR_BUFF - len, "Core version = %d.%d.%d.%d\n",
                         (ilits->chip->core_ver >> 24) & 0xFF, (ilits->chip->core_ver >> 16) & 0xFF,
                         (ilits->chip->core_ver >> 8) & 0xFF, ilits->chip->core_ver & 0xFF);
 
-    len += snprintf(g_user_buf + len, USER_STR_BUFF - len, "Protocol version = %u.%u.%u\n",
+    len += snprintf(g_user_buf + len, USER_STR_BUFF - len, "Protocol version = %d.%d.%d\n",
                     ilits->protocol->ver >> 16, (ilits->protocol->ver >> 8) & 0xFF,
                     ilits->protocol->ver & 0xFF);
     len += snprintf(g_user_buf + len, USER_STR_BUFF - len, "Driver version = %s\n", DRIVER_VERSION);
@@ -2577,7 +2575,7 @@ proc_node iliproc[] = {
     {"change_list", NULL, &proc_change_list_fops, false},
 };
 
-#define NETLINK_USER 21
+#define NETLINK_USER 0xff
 static struct sock *netlink_skb;
 static struct nlmsghdr *netlink_head;
 static struct sk_buff *skb_out;

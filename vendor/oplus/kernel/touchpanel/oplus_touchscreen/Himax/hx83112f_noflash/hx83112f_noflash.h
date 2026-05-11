@@ -22,7 +22,7 @@
 #include "oplus_spi.h"
 #endif
 #define HX_VERSION_SELF_DEF 200302
-#define HX_RST_PIN_FUNC
+//#define HX_RST_PIN_FUNC
 #define HX_ENTER_ALGORITHM_NUMBER		/*Support calculation enter algorithm number*/
 
 /*********PART2:Define Area**********************/
@@ -90,58 +90,58 @@
 #define HX1K		  0x400
 
 #define FW_BIN_16K_SZ 0x4000
-struct touchpanel_data *hx83112f_private_ts;
-int hx83112f_g_f_0f_updat = 0;
+struct touchpanel_data *private_ts;
+int g_f_0f_updat = 0;
 
 /**COMMON USE   ***START***/
-unsigned long HX83112F_FW_VER_MAJ_FLASH_ADDR;
-unsigned long HX83112F_FW_VER_MIN_FLASH_ADDR;
-unsigned long HX83112F_CFG_VER_MAJ_FLASH_ADDR;
-unsigned long HX83112F_CFG_VER_MIN_FLASH_ADDR;
-unsigned long HX83112F_CID_VER_MAJ_FLASH_ADDR;
-unsigned long HX83112F_CID_VER_MIN_FLASH_ADDR;
-unsigned long HX83112F_FW_VER_MAJ_FLASH_LENG;
-unsigned long HX83112F_FW_VER_MIN_FLASH_LENG;
-unsigned long HX83112F_CFG_VER_MAJ_FLASH_LENG;
-unsigned long HX83112F_CFG_VER_MIN_FLASH_LENG;
-unsigned long HX83112F_CID_VER_MAJ_FLASH_LENG;
-unsigned long HX83112F_CID_VER_MIN_FLASH_LENG;
-unsigned long HX83112F_FW_CFG_VER_FLASH_ADDR;
-uint8_t HX83112F_HX_PROC_SEND_FLAG;
+unsigned long FW_VER_MAJ_FLASH_ADDR;
+unsigned long FW_VER_MIN_FLASH_ADDR;
+unsigned long CFG_VER_MAJ_FLASH_ADDR;
+unsigned long CFG_VER_MIN_FLASH_ADDR;
+unsigned long CID_VER_MAJ_FLASH_ADDR;
+unsigned long CID_VER_MIN_FLASH_ADDR;
+unsigned long FW_VER_MAJ_FLASH_LENG;
+unsigned long FW_VER_MIN_FLASH_LENG;
+unsigned long CFG_VER_MAJ_FLASH_LENG;
+unsigned long CFG_VER_MIN_FLASH_LENG;
+unsigned long CID_VER_MAJ_FLASH_LENG;
+unsigned long CID_VER_MIN_FLASH_LENG;
+unsigned long FW_CFG_VER_FLASH_ADDR;
+uint8_t HX_PROC_SEND_FLAG;
 
-static struct proc_dir_entry *himax_proc_register_file = NULL;
-uint8_t hx83112f_byte_length = 0;
-uint8_t hx83112f_register_command[4];
-bool hx83112f_cfg_flag = false;
+struct proc_dir_entry *himax_proc_register_file = NULL;
+uint8_t byte_length = 0;
+uint8_t register_command[4];
+bool cfg_flag = false;
 
 //#ifdef HX_ESD_RECOVERY
-u8 HX83112F_HX_ESD_RESET_ACTIVATE = false;
-int hx83112f_hx_eb_event_flag;
-int hx83112f_hx_ec_event_flag;
-int hx83112f_hx_ed_event_flag;
+u8 HX_ESD_RESET_ACTIVATE = false;
+int hx_EB_event_flag;
+int hx_EC_event_flag;
+int hx_ED_event_flag;
 //#endif
 
-bool hx83112f_hx_reset_state;
+bool HX_RESET_STATE;
 
-unsigned char HX83112F_IC_TYPE = 11;
-unsigned char HX83112F_IC_CHECKSUM = 0;
-bool HX83112F_DSRAM_Flag = false;
-int hx83112f_g_diag_command = 0;
-uint8_t hx83112f_diag_coor[128];
-int32_t hx83112f_diag_self[100] = {0};
+unsigned char IC_TYPE = 11;
+unsigned char IC_CHECKSUM = 0;
+bool DSRAM_Flag = false;
+int g_diag_command = 0;
+uint8_t diag_coor[128];
+int32_t diag_self[100] = {0};
 
-int hx83112f_g_max_mutual = 0;
-int hx83112f_g_min_mutual = 255;
-int hx83112f_g_max_self = 0;
-int hx83112f_g_min_self = 255;
+int g_max_mutual = 0;
+int g_min_mutual = 255;
+int g_max_self = 0;
+int g_min_self = 255;
 
-int hx83112f_mutual_set_flag;
-uint8_t hx83112f_cmd_set[8];
+int mutual_set_flag;
+uint8_t cmd_set[8];
 
 /**GESTURE_TRACK*/
-static int hx83112f_gest_pt_cnt;
-static int hx83112f_gest_pt_x[10];
-static int hx83112f_gest_pt_y[10];
+static int gest_pt_cnt;
+static int gest_pt_x[10];
+static int gest_pt_y[10];
 
 
 #define HX_KEY_MAX_COUNT             4
@@ -250,7 +250,7 @@ typedef enum {
     SKIPTXNUM_END = SKIPTXNUM_9,
 } SKIPTXNUMINDEX;
 
-char *hx83112f_g_himax_inspection_mode[] = {
+char *g_himax_inspection_mode[] = {
     "HIMAX_INSPECTION_OPEN",
     "HIMAX_INSPECTION_MICRO_OPEN",
     "HIMAX_INSPECTION_SHORT",
@@ -262,11 +262,10 @@ char *hx83112f_g_himax_inspection_mode[] = {
     "HIMAX_INSPECTION_LPWUG_NOISE",
     "HIMAX_INSPECTION_LPWUG_IDLE_RAWDATA",
     "HIMAX_INSPECTION_LPWUG_IDLE_NOISE",
-    NULL
 };
 
 /* for criteria */
-char *hx83112f_g_hx_inspt_crtra_name[] = {
+char *g_hx_inspt_crtra_name[] = {
     "CRITERIA_OPEN_MIN",
     "CRITERIA_OPEN_MAX",
     "CRITERIA_MICRO_OPEN_MIN",
@@ -413,7 +412,7 @@ static uint16_t LPWUG_NOISEMAX;
 
 /** FOR DEBUG USE ****END****/
 
-struct hx83112f_report_data {
+struct himax_report_data {
     int touch_all_size;
     int raw_cnt_max;
     int raw_cnt_rmd;
@@ -436,7 +435,7 @@ struct hx83112f_report_data {
 };
 
 /*********PART3:Struct Area**********************/
-struct hx83112f_himax_fw_debug_info {
+struct himax_fw_debug_info {
     u16 recal0 : 1;
     u16 recal1 : 1;
     u16 paseline : 1;
@@ -462,7 +461,6 @@ struct chip_data_hx83112f {
     struct himax_proc_operations *syna_ops; /*hx83112f func provide to hx83112f common driver*/
 
     struct hw_resource *hw_res;
-    struct monitor_data_v2 *monitor_data_v2;
     int16_t *spuri_fp_data;
     struct spurious_fp_touch *p_spuri_fp_touch;
     /********SPI bus*******************************/
@@ -550,7 +548,7 @@ struct zf_info {
 };
 
 
-struct hx83112f_core_fp {
+struct himax_core_fp {
     int (*fp_reload_disable)(void);
     void (*fp_clean_sram_0f)(uint8_t *addr, int write_len, int type);
     void (*fp_write_sram_0f)(const struct firmware *fw_entry, uint8_t *addr, int start_index, uint32_t write_len);

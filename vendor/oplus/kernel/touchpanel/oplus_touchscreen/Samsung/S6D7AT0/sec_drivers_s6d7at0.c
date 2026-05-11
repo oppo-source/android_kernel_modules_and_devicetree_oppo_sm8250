@@ -2792,6 +2792,7 @@ static int sec_tp_probe(struct i2c_client *client, const struct i2c_device_id *i
     /* 4. file_operations callbacks binding */
     ts->ts_ops = &sec_ops;
     ts->earsense_ops = &earsense_proc_ops;
+	ts->calibration_support = true;
 
     /* 5. register common touch device*/
     ret = register_common_touch_device(ts);
@@ -2800,6 +2801,7 @@ static int sec_tp_probe(struct i2c_client *client, const struct i2c_device_id *i
     }
     //ts->tp_resume_order = LCD_TP_RESUME;
     ts->tp_suspend_order = TP_LCD_SUSPEND;
+
     //ts->mode_switch_type = SINGLE;
     chip_info->edge_limit_support = ts->edge_limit_support;
     chip_info->fw_edge_limit_support = ts->fw_edge_limit_support;

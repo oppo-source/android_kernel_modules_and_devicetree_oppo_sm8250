@@ -327,7 +327,7 @@ static int tc_hw_pwron(struct synaptics_ts_data *ts)
         TPD_DEBUG("synaptics:enable the reset_gpio\n");
         gpio_direction_output(ts->reset_gpio, 1);
     }
-    msleep(80); 
+    msleep(80);
     return rc;
 }
 
@@ -496,6 +496,7 @@ static int synaptics_init_panel(struct synaptics_ts_data *ts)
         return -1;
     }
     /*device control: normal operation, configur = 1*/
+    //chenggang.li @BSP change 0x80 to 0x84, bit2:1 nosleep  bit2:0 sleep
     ret = synaptics_rmi4_i2c_write_byte(ts->client, F01_RMI_CTRL00, 0x80);
     if (ret < 0) {
         msleep(150);
@@ -677,7 +678,6 @@ static int synaptics_rmi4_i2c_write_word(struct i2c_client* client,
         retval = buf[1] << 8 | buf[0];
     return retval;
 }
-
 
 #ifdef LCD_TRIGGER_KEY_FORCE_CAL
 static int key_press_all_the_time = 0;
@@ -1161,7 +1161,6 @@ const struct file_operations proc_debug =
     .release    = single_release,
 };
 
-
 static ssize_t synaptics_rmi4_baseline_show_s1302(struct device *dev, char *buf, bool savefile)
 {
     int ret = 0;
@@ -1554,7 +1553,6 @@ static const struct file_operations oplus_tp_baseline_image_proc_fops =
     .owner = THIS_MODULE,
 };
 
-
 static int synaptics_s1302_proc(void)
 {
     struct proc_dir_entry *proc_entry = 0;
@@ -1567,11 +1565,9 @@ static int synaptics_s1302_proc(void)
     proc_entry = proc_create_data("reset", 0666, procdir, &proc_reset, NULL);
     proc_entry = proc_create_data("oplus_tp_debug", 0666, procdir, &proc_debug, NULL);
 
-
     proc_entry = proc_create_data("baseline_test", 0666, procdir, &tp_baseline_test_proc_fops, NULL);
     proc_entry = proc_create_data("oplus_tp_delta_data", 0644, procdir, &oplus_tp_delta_data_proc_fops, NULL);
     proc_entry = proc_create_data("oplus_tp_baseline_image", 0644, procdir, &oplus_tp_baseline_image_proc_fops, NULL);
-
 
     TPD_INFO("create nodes is successe!\n");
 
@@ -2236,7 +2232,6 @@ static void speedup_synaptics_resume(struct work_struct *work)
     }
     ret = synaptics_soft_reset(ts);
     msleep(50);
-
 
     bootloader_mode = synaptics_rmi4_i2c_read_byte(ts->client, F01_RMI_DATA_BASE);
     bootloader_mode = bootloader_mode & 0xff;

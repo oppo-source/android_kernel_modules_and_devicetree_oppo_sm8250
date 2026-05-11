@@ -807,6 +807,6 @@ static void __exit subsys_sleepmon_exit(void)
 }
 module_exit(subsys_sleepmon_exit);
 
-MODULE_AUTHOR("Colin.Liu <liuyuan1@oppo.com>");
+MODULE_AUTHOR("Colin.Liu");
 MODULE_DESCRIPTION("Subsys sleep monitor module");
 MODULE_LICENSE("GPL v2");

@@ -98,7 +98,7 @@
 #endif
 
 #include "../../touchpanel_common.h"
-#include <soc/oplus/system/oplus_project.h>
+#include <soc/oplus/oplus_project.h>
 
 #define DRIVER_VERSION                  "3.0.4.0.200803"
 
@@ -696,7 +696,7 @@ struct ilitek_ts_data {
     bool earphone_sta;
     bool charger_sta;
     bool noise_sta;
-#endif /*CONFIG_OPLUS_TP_APK*/
+#endif //end of CONFIG_OPLUS_TP_APK
 
     int (*spi_write_then_read)(struct spi_device *spi,
                                const void *txbuf,

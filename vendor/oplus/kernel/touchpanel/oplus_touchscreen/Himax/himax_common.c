@@ -121,7 +121,7 @@ static int tp_auto_test_read_func(struct seq_file *s, void *v)
     //step2: create a file to store test data in /sdcard/Tp_Test
     getnstimeofday(&now_time);
     rtc_time_to_tm(now_time.tv_sec, &rtc_now_time);
-	sprintf(data_buf, "/sdcard/TpTestReport/tp_testlimit_%02d%02d%02d-%02d%02d%02d-utc.csv",
+    sprintf(data_buf, "/sdcard/tp_testlimit_%02d%02d%02d-%02d%02d%02d-utc.csv",
             (rtc_now_time.tm_year + 1900) % 100, rtc_now_time.tm_mon + 1, rtc_now_time.tm_mday,
             rtc_now_time.tm_hour, rtc_now_time.tm_min, rtc_now_time.tm_sec);
     old_fs = get_fs();

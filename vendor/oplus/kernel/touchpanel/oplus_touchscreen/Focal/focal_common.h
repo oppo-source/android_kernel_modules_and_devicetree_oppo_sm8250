@@ -36,9 +36,6 @@
 #define READ_BUF_SIZE                           512
 #define FILE_NAME_LENGTH                        128
 
-#define Limit_ItemMagic     0x4F50504F
-#define Limit_ItemMagic_V2  0x4F504C53
-
 struct focal_testdata{
     int TX_NUM;
     int RX_NUM;
@@ -99,6 +96,7 @@ enum {
     TYPE_BLACK_CB_DATA                          = 0x10,
     TYPE_BLACK_RAW_DATA                         = 0x11,
     TYPE_BLACK_NOISE_DATA                       = 0x12,
+    
 
     TYPE_FACTORY_NOISE_DATA                     = 0x15,            /*limit from panel factory*/
     TYPE_FACTORY_RAW_DATA                       = 0x16,
@@ -150,10 +148,8 @@ struct focal_debug_func
 };
 
 /*********PART4:function declare*****************/
-int focal_create_sysfs_spi(struct spi_device *spi);
-int focal_create_sysfs(struct i2c_client *client);
+int focal_create_sysfs(struct i2c_client * client);
 int focal_create_apk_debug_channel(struct touchpanel_data *ts);
 void ft_limit_read_std(struct seq_file *s, struct touchpanel_data *ts);
-int focal_auto_test(struct seq_file *s,  struct touchpanel_data *ts);
 
 #endif /*__FOCAL_COMMON_H__*/

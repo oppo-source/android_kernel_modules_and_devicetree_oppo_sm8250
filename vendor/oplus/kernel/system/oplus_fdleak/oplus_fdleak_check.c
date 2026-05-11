@@ -227,7 +227,7 @@ static void __exit fdleak_chekc_exit(void)
 
 MODULE_DESCRIPTION("oplus fdleak check");
 MODULE_LICENSE("GPL v2");
-MODULE_AUTHOR("Wei.Li <liwei1234@oppo.com>");
+MODULE_AUTHOR("Wei.Li");
 
 module_init(fdleak_check_init);
 module_exit(fdleak_chekc_exit);

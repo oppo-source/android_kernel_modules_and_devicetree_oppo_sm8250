@@ -7,6 +7,7 @@
 #define __OPLUS_BQ27541_H__
 
 #include "../oplus_gauge.h"
+#include "../oplus_chg_track.h"
 #define OPLUS_USE_FAST_CHARGER
 #define DRIVER_VERSION			"1.1.0"
 
@@ -163,6 +164,7 @@
 #define DEVICE_TYPE_BQ28Z610		0xFFA5
 #define DEVICE_TYPE_ZY0602			0x0602
 #define DEVICE_TYPE_ZY0603			0xA5FF
+#define DEVICE_NAME_LEN				12
 
 #define DEVICE_BQ27541				0
 #define DEVICE_BQ27411				1
@@ -237,6 +239,8 @@
 #define ZY602_MAC_CELL_DOD0_CMD				    0x00E3
 #define ZY602_MAC_CELL_DOD0_ADDR				0x40
 #define ZY602_MAC_CELL_DOD0_SIZE				12
+#define ZY602_FW_CHECK_CMD				0xA0
+#define ZY602_FW_CHECK_ERROR				0x3602
 
 #define BQ28Z610_MAC_CELL_DOD0_EN_ADDR			0x3E
 #define BQ28Z610_MAC_CELL_DOD0_CMD				0x0074
@@ -304,7 +308,14 @@
 #define ZY0603_GFCONFIG_R2D_REG			0x475A
 #define ZY0603_GFMAXDELTA_REG			0x479B
 
-
+#define GAUGE_SUBCMD_TRY_COUNT	3
+#define GAUGE_EXTERN_DATAFLASHBLOCK	0x3e
+#define BQ27541_BLOCK_SIZE			32
+#define BQ28Z610_EXTEND_DATA_SIZE		34
+#define BQ28Z610_REG_TRUE_FCC			0x0073
+#define BQ28Z610_TRUE_FCC_NUM_SIZE		2
+#define BQ28Z610_TRUE_FCC_OFFSET		8
+#define BQ28Z610_FCC_SYNC_CMD			0x0043
 
 #define U_DELAY_1_MS	1000
 #define U_DELAY_5_MS	5000
@@ -448,9 +459,21 @@ typedef struct {
 	oplus_gauge_auth_result rst_k2;
 } oplus_gauge_auth_info_type;
 
+#define MODE_CHECK_MAX_LENGTH 1024
+struct gauge_track_mode_info {
+	struct mutex track_lock;
+	bool uploading;
+	u8 *mode_check_buf;
+	struct mutex buf_lock;
+	oplus_chg_track_trigger *load_trigger;
+	struct delayed_work load_trigger_work;
+	bool track_init_done;
+};
+
 struct chip_bq27541 {
 	struct i2c_client *client;
 	struct device *dev;
+	u8 device_name[DEVICE_NAME_LEN];
 
 	int soc_pre;
 	int temp_pre;
@@ -478,6 +501,7 @@ struct chip_bq27541 {
 	int device_type_for_vooc;
 	struct cmd_address cmd_addr;
 	atomic_t suspended;
+	atomic_t shutdown;
 	int batt_cell_1_vol;
 	int batt_cell_2_vol;
 	int batt_cell_max_vol;
@@ -508,6 +532,9 @@ struct chip_bq27541 {
 
 	bool modify_soc_smooth;
 	bool modify_soc_calibration;
+
+	bool fcc_too_small_checking;
+	struct work_struct fcc_too_small_check_work;
 
 	bool allow_reading;
 	bool wlchg_started;
@@ -555,8 +582,15 @@ struct chip_bq27541 {
 	atomic_t gauge_i2c_status;
 	int dump_sh366002_block;
 	unsigned long log_last_update_tick;
+	struct gauge_track_mode_info track_mode;
+
+	bool gauge_fix_cadc;
+	bool gauge_cal_board;
+	bool gauge_check_model;
+	bool gauge_check_por;
 };
 
+int bq27541_track_update_mode_buf(struct chip_bq27541 *chip, char *buf);
 extern bool oplus_gauge_ic_chip_is_null(void);
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
 int bq27541_driver_init(void);

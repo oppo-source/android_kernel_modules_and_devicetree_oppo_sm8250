@@ -1603,6 +1603,7 @@
 		status = "okay";
 		compatible = "oplus,mp2650-charger";
 		reg = <0x5c 0>;
+		support_icl_optimization;
 
 		qcom,mps_otg_en-gpio = <&pm8150_gpios 3 0x00>;
 		pinctrl-names = "mps_otg_en_active", "mps_otg_en_sleep", "mps_otg_en_default";
@@ -1873,6 +1874,8 @@
 		status = "okay";
 		compatible = "oplus,rk826-fastcg";
 		reg = <0x0a 0>;
+		oplus,vooc_1time_full_volt = <4500>;
+		oplus,vooc_ntime_full_volt = <4490>;
 		qcom,vooc-low-temp = <0>;
 		qcom,oplus_batt_4400mv;
 		qcom,support_vooc_by_normal_charger_path;
@@ -2148,6 +2151,7 @@
 			qcom,usbtemp_batttemp_gap = <17>;
 
 			//for oplus chg framework:
+			oplus,full_limit_curr_support;
 			qcom,input_current_charger_ma = <2000>;
 			qcom,pd_input_current_charger_ma = <2000>;
 			qcom,qc_input_current_charger_ma = <2000>;
@@ -2263,6 +2267,8 @@
 			qcom,little_cool_vfloat_over_sw_limit = <4445>;
 			qcom,normal_vfloat_over_sw_limit = <4445>;
 			qcom,warm_vfloat_over_sw_limit = <4140>;
+
+			oplus_spec,dec-vol-fv-mv = <40>;
 
 			qcom,vbatt_power_off = <3300>;
 			qcom,vbatt_soc_1 = <3310>;

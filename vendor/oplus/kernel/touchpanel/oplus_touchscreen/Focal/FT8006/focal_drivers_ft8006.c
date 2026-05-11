@@ -2218,7 +2218,6 @@ OUT:
 static struct debug_info_proc_operations debug_info_proc_ops = {
     .delta_read    = focal_delta_read,
     .baseline_read = focal_baseline_read,
-    .baseline_blackscreen_read = focal_baseline_read,
     .main_register_read = focal_main_register_read,
     .reserve_read = focal_cb_read,
 };

@@ -13,6 +13,7 @@
 #include <linux/notifier.h>
 #endif
 #include "../sec_common.h"
+#include "../../touchpanel_prevention.h"
 
 /*********PART2:Define Area**********************/
 #define GESTURE_DOUBLECLICK                     0x00
@@ -28,8 +29,25 @@
 #define GESTURE_M                               0x0A
 #define GESTURE_W                               0x0B
 #define GESTURE_DOUBLE_LINE                     0x0C
+#define GESTURE_SINGLE_TAP                      0x0E
 #define GESTURE_HEART                           0x0D
 #define GESTURE_EARSENSE                        0x0E
+
+#define GESTURE_DOUBLECLICK_BIT                 8
+#define GESTURE_UP_V_BIT                        9
+#define GESTURE_DOWN_V_BIT                      10
+#define GESTURE_LEFT_V_BIT                      11
+#define GESTURE_RIGHT_V_BIT                     12
+#define GESTURE_O_BIT                           13
+#define GESTURE_UP_BIT                          14
+#define GESTURE_DOWN_BIT                        15
+#define GESTURE_LEFT_BIT                        0
+#define GESTURE_RIGHT_BIT                       1
+#define GESTURE_M_BIT                           2
+#define GESTURE_W_BIT                           3
+#define GESTURE_DOUBLE_LINE_BIT                 GESTURE_DOWN_BIT
+#define GESTURE_SINGLE_TAP_BIT                  5
+#define GESTURE_S_BIT                           6
 
 #define RESET_TO_NORMAL_TIME                    (70)
 #define SEC_EVENT_BUFF_SIZE                     16
@@ -137,7 +155,7 @@
 #define SEC_CMD_P2PTEST                         0x82
 #define SEC_CMD_INTERRUPT_SWITCH                0x89
 
-#define SEC_CMD_REG_SMOOTH_LEVEL                0x90    //control smooth filter,and range 0~4
+#define SEC_CMD_REG_SMOOTH_LEVEL                0x96    /* control smooth filter,and range 0~4 */
 #define SEC_CMD_REG_SENSITIVE_LEVEL             0x91    //control stop filter,  and range 0~4
 #define SEC_CMD_REG_STOP_LOCK_POINT		0x93	/*control stop lock point, and range 0~100*/
 
@@ -151,7 +169,7 @@
 #define SEC_CMD_GRIP_DIRECTION                  0xAD
 #define SEC_CMD_GRIP_ENABLE                     0xBC
 
-#define SEC_CMD_SENSETIVE_CTRL                  0x3F
+#define SEC_CMD_SENSETIVE_CTRL                  0x91
 #define SEC_CMD_NOISE_CTRL                      0x33
 #define SEC_CMD_WET_SWITCH                      0x8B
 #define SEC_CMD_GAME_MODE                       0x45
@@ -165,6 +183,8 @@
 #define SEC_READ_RTDP_FRAMENUM                  0xC2    //Read RTDP frame num
 
 #define SEC_CMD_GRIP_CONSTANT                   0x42
+
+#define SEC_CMD_FILTER_CTRL                     0x95
 
 /*********PART3:Struct Area**********************/
 typedef struct {
@@ -311,6 +331,10 @@ struct chip_data_s6sy792 {
     int                             *fp_enable;
     int                             kernel_grip_para;
     bool                            auto_test_need_cal_support;
+	bool							control_smooth_flag;
+	int gesture_state;
+	bool black_gesture_indep;
+#ifdef CONFIG_OPLUS_TP_APK
 
     bool lock_point_status;
     bool plug_status;
@@ -321,9 +345,11 @@ struct chip_data_s6sy792 {
     bool in_gesture;
     u32 debug_gesture_type;
     //bool water_sta;
-	int gesture_state;
-	bool black_gesture_indep;
-	struct monitor_data_v2 *monitor_data_v2;
+#endif //end of CONFIG_OPLUS_TP_APK
 };
 
+struct sec_support_grip_zone {
+    char                            name[GRIP_TAG_SIZE];
+    int                             (*handle_func) (struct grip_zone_area *grip_zone, bool enable);
+};
 #endif

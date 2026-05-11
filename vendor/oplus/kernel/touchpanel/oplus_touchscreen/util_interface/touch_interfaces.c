@@ -563,7 +563,7 @@ int touch_i2c_read(struct i2c_client *client, char *writebuf, int writelen, char
 {
     int retval = 0;
     int retry = 0;
-    struct touchpanel_data *ts = NULL;
+	struct touchpanel_data *ts = NULL;
 
     mutex_lock(&i2c_mutex);
     if (client == NULL) {
@@ -571,8 +571,7 @@ int touch_i2c_read(struct i2c_client *client, char *writebuf, int writelen, char
         mutex_unlock(&i2c_mutex);
         return -1;
     }
-
-    ts = i2c_get_clientdata(client);
+	ts = i2c_get_clientdata(client);
 
     if (readlen > 0) {
         if (writelen > 0) {

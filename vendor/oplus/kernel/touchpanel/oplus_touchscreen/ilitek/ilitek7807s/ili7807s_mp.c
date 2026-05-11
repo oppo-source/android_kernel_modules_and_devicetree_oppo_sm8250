@@ -1088,7 +1088,7 @@ static void mp_print_csv_header(char *csv, int *csv_len, int *csv_line, int file
     tmp_len += snprintf(csv + tmp_len, (file_size - tmp_len),
                         "==============================================================================\n");
     tmp_line++;
-    tmp_len += snprintf(csv + tmp_len, CSV_FILE_SIZE - tmp_len, "OPLUS_%u\n", get_project());
+    tmp_len += snprintf(csv + tmp_len, CSV_FILE_SIZE - tmp_len, "OPLUS_%d\n", get_project());
     tmp_line++;
     tmp_len += snprintf(csv + tmp_len, CSV_FILE_SIZE - tmp_len,
                         "Test Platform ,Mobile\n");

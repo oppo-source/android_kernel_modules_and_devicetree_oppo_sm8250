@@ -1035,6 +1035,42 @@ static int sc8547_reactive_voocphy(struct oplus_voocphy_manager *chip)
 	return VOOCPHY_SUCCESS;
 }
 
+static int sc8547_voocphy_set_sstimeout_ucp_enable(struct oplus_voocphy_manager *chip, bool enable)
+{
+	int ret;
+	u8 reg_data;
+	struct oplus_chg_chip *chg_chip = oplus_chg_get_chg_struct();
+
+
+	if (!chip || !chg_chip) {
+		chg_err("sc8547 chip is NULL\n");
+		return -ENODEV;
+	}
+
+	if (!chg_chip->full_limit_curr_support)
+		return 0;
+
+	ret = sc8547_read_byte(chip->client, SC8547_REG_05, &reg_data);
+	if ((enable && !(reg_data >> 7)) || (!enable && (reg_data >> 7)))
+		return 0;
+
+	if (enable && (reg_data >> 7)) {
+		ret = sc8547_update_bits(chip->client, SC8547_REG_05,
+			SC8547_IBUS_UCP_DIS_MASK, (SC8547_IBUS_UCP_ENABLE << SC8547_IBUS_UCP_DIS_SHIFT));
+		ret |= sc8547_update_bits(chip->client, SC8547_REG_08,
+			SC8547_SS_TIMEOUT_SET_MASK, (SC8547_SS_TIMEOUT_81920MS << SC8547_SS_TIMEOUT_SET_SHIFT));/* ucp ss_time enable*/
+	} else {
+		ret = sc8547_update_bits(chip->client, SC8547_REG_05,
+			SC8547_IBUS_UCP_DIS_MASK, (SC8547_IBUS_UCP_DISABLE << SC8547_IBUS_UCP_DIS_SHIFT));
+		ret |= sc8547_update_bits(chip->client, SC8547_REG_08,
+			SC8547_SS_TIMEOUT_SET_MASK, (SC8547_SS_TIMEOUT_DISABLE << SC8547_SS_TIMEOUT_SET_SHIFT));/* ucp ss_time enable*/
+	}
+
+	chg_info("sc8547 set ucp and sstimeout %s\n", enable ? "enable" : "disable");
+
+	return ret;
+}
+
 static irqreturn_t sc8547_charger_interrupt(int irq, void *dev_id)
 {
 	struct oplus_voocphy_manager *chip = dev_id;
@@ -1220,6 +1256,7 @@ static int sc8547_svooc_hw_setting(struct oplus_voocphy_manager *chip)
 	//oplus_vooc_send_handshake_seq();
 	sc8547_write_byte(chip->client, SC8547_REG_33, 0xd1);	//Loose_det=1
 	sc8547_write_byte(chip->client, SC8547_REG_3A, 0x60);
+	sc8547_voocphy_set_sstimeout_ucp_enable(chip, false);
 	return 0;
 }
 
@@ -1235,6 +1272,7 @@ static int sc8547_vooc_hw_setting(struct oplus_voocphy_manager *chip)
 	//oplus_vooc_send_handshake_seq();
 	sc8547_write_byte(chip->client, SC8547_REG_33, 0xd1);	//Loose_det
 	sc8547_write_byte(chip->client, SC8547_REG_3A, 0x60);
+	sc8547_voocphy_set_sstimeout_ucp_enable(chip, false);
 	return 0;
 }
 
@@ -1559,6 +1597,7 @@ static struct oplus_voocphy_operations oplus_sc8547_ops = {
 	.get_pd_svooc_config = sc8547_get_pd_svooc_config,
 	.get_voocphy_enable = sc8547_get_voocphy_enable,
 	.dump_voocphy_reg	= sc8547_dump_reg_in_err_issue,
+	.set_sstimeout_ucp_enable = sc8547_voocphy_set_sstimeout_ucp_enable,
 };
 
 static int sc8547_cp_hardware_init(struct i2c_client *client)
@@ -1894,6 +1933,14 @@ irqreturn_t sc8547_protect_interrupt_handler(struct oplus_voocphy_manager *chip)
 	return IRQ_HANDLED;
 }
 
+static int sc8547_cp_get_maxcur(struct i2c_client *client)
+{
+	if (!oplus_voocphy_mg)
+		return 0;
+
+	return oplus_voocphy_mg->voocphy_cp_max_ibus;
+}
+
 static struct oplus_pps_cp_device_operations sc8547_cp_pps_ops = {
 	.oplus_cp_hardware_init = sc8547_cp_hardware_init,
 	.oplus_cp_reset         = sc8547_cp_reg_reset,
@@ -1907,6 +1954,7 @@ static struct oplus_pps_cp_device_operations sc8547_cp_pps_ops = {
 	.oplus_get_cp_vout      = sc8547_cp_get_vout,
 	.oplus_get_cp_vbat      = sc8547_cp_get_vbat,
 	.oplus_get_cp_tdie      = sc8547_cp_get_tdie,
+	.oplus_get_cp_maxcur    = sc8547_cp_get_maxcur,
 };
 
 static int sc8547_charger_choose(struct oplus_voocphy_manager *chip)

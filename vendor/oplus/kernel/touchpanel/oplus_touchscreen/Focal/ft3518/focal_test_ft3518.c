@@ -2287,35 +2287,6 @@ static int fts_auto_endoperation(struct fts_ts_data *ts_data)
     return 0;
 }
 
-static int fts_rst_test(struct fts_ts_data *ts_data)
-{
-	int ret = 0;
-	u8 val = 0;
-	u8 val2 = 0;
-	u8 val3 = 0;
-
-	enter_work_mode();
-	fts_test_read_reg(FTS_REG_REPORT_RATE, &val);
-	val2 = val - 1;
-	fts_test_write_reg(FTS_REG_REPORT_RATE, val2);
-	fts_rstpin_reset((void*)ts_data);
-	fts_test_read_reg(FTS_REG_REPORT_RATE, &val3);
-	TPD_INFO("one: reset test: val = %d, val3 = %d", val, val3);
-
-	fts_test_read_reg(FTS_REG_REPORT_RATE, &val);
-	val2 = val - 1;
-	fts_test_write_reg(FTS_REG_REPORT_RATE, val2);
-	fts_rstpin_reset((void*)ts_data);
-	fts_test_read_reg(FTS_REG_REPORT_RATE, &val3);
-	TPD_INFO("two: reset test: val = %d, val3 = %d", val, val3);
-
-	if (val3 != val) {
-		FTS_TEST_SAVE_ERR("check reg to test rst failed.\n");
-		ret = -1;
-	}
-
-	return ret;
-}
 
 static int fts_start_test(struct fts_ts_data *ts_data)
 {
@@ -2375,14 +2346,6 @@ static int fts_start_test(struct fts_ts_data *ts_data)
         test_result |= (1 << 6);
         failed_count += 1;
     }
-
-	/* rst pin test */
-	ret = fts_rst_test(ts_data);
-	if(ret < 0) {
-		test_result = false;
-		test_result |= (1 << 7);
-		failed_count += 1;
-	}
 
     fts_auto_write_result(ts_data, failed_count);
     fts_auto_endoperation(ts_data);
@@ -2652,7 +2615,7 @@ static int fts_get_threshold_from_img(struct fts_ts_data *ts_data, char *data, c
 
     ts_data->fts_autotest_offset = kzalloc(sizeof(struct fts_autotest_offset), GFP_KERNEL);
 
-    ret = request_real_test_limit(ts,&limit_fw, ts->panel_data.test_limit_name, &ts_data->client->dev);
+    ret = request_firmware(&limit_fw, ts->panel_data.test_limit_name, &ts_data->client->dev);
     TPD_INFO("limit_img path is [%s] \n", ts->panel_data.test_limit_name);
     if (ret < 0) {
         TPD_INFO("Request limit_img failed - %s (%d)\n", ts->panel_data.test_limit_name, ret);

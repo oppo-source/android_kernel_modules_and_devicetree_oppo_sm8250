@@ -145,7 +145,11 @@
 #define PLATFORM_SUPPORT_TIMESPEC 1
 #elif defined CONFIG_OPLUS_SM8550_CHARGER
 #include "charger_ic/oplus_battery_sm8550.h"
+#elif defined OPLUS_CHG_SEPARATE_MUSE
+#include "charger_ic/oplus_battery_sm6115R.h"
 #elif defined CONFIG_OPLUS_SM6375R_CHARGER
+#include "charger_ic/oplus_battery_sm6375.h"
+#elif defined CONFIG_OPLUS_SM6115R_CHARGER
 #include "charger_ic/oplus_battery_sm6375.h"
 #else /* CONFIG_OPLUS_MSM8953_CHARGER */
 #include "charger_ic/oplus_battery_msm8976.h"
@@ -1031,6 +1035,27 @@ typedef enum {
 #define AGING2_FFC1_DUAL_LT60W_OFFSET_MV	15
 #define AGING2_FFC2_DUAL_LT60W_OFFSET_MV	15
 
+struct dec_cv_data {
+	bool dec_track;
+	int dec_vol;
+	int dec_delta;
+	int spec_dec_cv_mv;
+};
+
+#define FCL_TABLE_MAX 2
+#define FCL_CURVE_MAX 3
+struct fcl_table {
+	int volt_diff;
+	int curr_dec;
+	int min_curr;
+} __attribute__((packed));
+
+struct fcl_curves {
+	struct fcl_table limits[FCL_CURVE_MAX];
+	int nums;
+	int index;
+};
+
 struct oplus_chg_chip {
 	struct i2c_client *client;
 	struct device *dev;
@@ -1188,6 +1213,7 @@ struct oplus_chg_chip {
 	int led_temp_status;
 	bool vooc_temp_change;
 	int vooc_temp_status;
+	bool full_limit_curr_support;
 	bool camera_on;
 	bool calling_on;
 	bool ac_online;
@@ -1425,12 +1451,16 @@ struct oplus_chg_chip {
 	oplus_chg_track_trigger *mmi_chg_info_trigger;
 	oplus_chg_track_trigger *slow_chg_info_trigger;
 	oplus_chg_track_trigger *chg_cycle_info_trigger;
+	oplus_chg_track_trigger *dec_vol_info_trigger;
 	struct delayed_work mmi_chg_info_trigger_work;
 	struct delayed_work slow_chg_info_trigger_work;
 	struct delayed_work chg_cycle_info_trigger_work;
+	struct delayed_work dec_vol_info_trigger_work;
+
 	struct mutex mmi_chg_info_lock;
 	struct mutex slow_chg_info_lock;
 	struct mutex chg_cycle_info_lock;
+	struct mutex dec_vol_info_lock;
 
 	struct reserve_soc_data rsd;
 	bool is_gauge_ready;
@@ -1514,6 +1544,10 @@ struct oplus_chg_chip {
 	bool use_audio_switch;
 	int soc_resume_sleep_time;
 	int track_gmtoff;
+	struct dec_cv_data dec_cv;
+	bool dec_spec_support;
+	struct fcl_curves fcl;
+	int fcl_offset;
 };
 
 #define TTF_UPDATE_UEVENT_BIT		BIT(30)
@@ -1780,6 +1814,7 @@ int oplus_chg_get_cool_down_status(void);
 int oplus_chg_get_normal_cool_down_status(void);
 void oplus_smart_charge_by_cool_down(struct oplus_chg_chip *chip, int val);
 int oplus_convert_current_to_level(struct oplus_chg_chip *chip, int val);
+int oplus_convert_level_to_current(struct oplus_chg_chip *chip, int val);
 int oplus_convert_pps_current_to_level(struct oplus_chg_chip *chip, int val);
 void oplus_smart_charge_by_shell_temp(struct oplus_chg_chip *chip, int val);
 int oplus_smart_charge_by_bcc(struct oplus_chg_chip *chip, int val);
@@ -1905,5 +1940,9 @@ void oplus_test_kit_unregister(void);
 int oplus_get_slow_chg_current(int batt_curve_current);
 int oplus_chg_track_upload_slow_chg_info(struct oplus_chg_chip *chip, int pct, int watt, int en);
 int oplus_chg_track_upload_mmi_chg_info(struct oplus_chg_chip *chip, int mmi_chg);
+void oplus_charger_set_dec_delta(int val);
+int oplus_charger_get_dec_delta(void);
+bool oplus_chg_get_fcl_curr(int hw_vth, int sw_vth, int vbat, int *curr_dec, int *min_curr, bool *hw);
+int oplus_chg_get_vb_offset(void);
 //#endif
 #endif /*_OPLUS_CHARGER_H_*/

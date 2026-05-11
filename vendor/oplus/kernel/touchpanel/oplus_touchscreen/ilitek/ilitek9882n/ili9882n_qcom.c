@@ -272,6 +272,7 @@ static int ili_spi_mp_pre_cmd(u8 cdc)
         ILI_ERR("Failed to write pre commands\n");
         return -1;
     }
+    mdelay(1);
 
     return 0;
 }
@@ -385,6 +386,10 @@ static int ili_spi_wrapper(u8 *txbuf, u32 wlen, u8 *rxbuf, u32 rlen, bool spi_ir
             }
 
             ret = ilits->spi_write_then_read(ilits->spi, wdata, wlen, txbuf, 0);
+            if (!ice) {
+                ILI_INFO("send cmd delay 1ms\n");
+                mdelay(1);
+            }
 
             if (ret < 0) {
                 ILI_INFO("spi-wrapper write error\n");
@@ -1116,7 +1121,7 @@ static void ili_demo_debug_info_id0(u8 *buf, int len)
     ipio_memcpy(&id_last, &id0, sizeof(id_last), sizeof(id0));
 }
 
-#endif /*CONFIG_OPLUS_TP_APK*/
+#endif // end of CONFIG_OPLUS_TP_APK
 
 void ili_demo_debug_info_mode(u8 *buf, size_t len)
 {
@@ -1133,7 +1138,7 @@ void ili_demo_debug_info_mode(u8 *buf, size_t len)
     if (info_id == 0) {
 #ifdef CONFIG_OPLUS_TP_APK
         ilits->demo_debug_info[info_id](&info_ptr[1], info_len);
-#endif /*CONFIG_OPLUS_TP_APK*/
+#endif // end of CONFIG_OPLUS_TP_APK
     } else {
         ILI_INFO("not support this id %d\n", info_id);
     }
@@ -1296,7 +1301,7 @@ void ili_report_gesture_mode(u8 *buf, int len)
         }
     }
 
-#endif /*CONFIG_OPLUS_TP_APK*/
+#endif // end of CONFIG_OPLUS_TP_APK
 
     if (P5_X_GESTURE_FAIL_ID == ges[0]) {
         ILI_INFO("gesture fail reason code = 0x%02x", ges[1]);
@@ -2565,7 +2570,7 @@ static int ilitek_mode_switch(void *chip_data, work_mode mode, bool flag)
                     ili_gesture_fail_reason(ENABLE);
                 }
 
-#endif /*CONFIG_OPLUS_TP_APK*/
+#endif // end of CONFIG_OPLUS_TP_APK
                 chip_info->actual_tp_mode = P5_X_FW_GESTURE_MODE;
             }
 
@@ -3000,7 +3005,7 @@ out:
     mutex_unlock(&ilits->touch_mutex);
     return 0;
 }
-#endif /*CONFIG_OPLUS_TP_APK*/
+#endif // end of CONFIG_OPLUS_TP_APK
 
 static void ilitek_delta_read(struct seq_file *s, void *chip_data)
 {
@@ -3013,7 +3018,7 @@ static void ilitek_delta_read(struct seq_file *s, void *chip_data)
         ilitek_read_debug_diff(s, chip_info);
     }
 
-#endif /*CONFIG_OPLUS_TP_APK*/
+#endif // end of CONFIG_OPLUS_TP_APK
 }
 
 static void ilitek_baseline_read(struct seq_file *s, void *chip_data)
@@ -3348,7 +3353,7 @@ static void ili_init_oplus_apk_op(struct touchpanel_data *ts)
         ILI_ERR("Can not kzalloc apk op.\n");
     }
 }
-#endif /*CONFIG_OPLUS_TP_APK*/
+#endif // end of CONFIG_OPLUS_TP_APK
 
 static void ilitek_flag_data_init(void)
 {
@@ -3596,7 +3601,7 @@ int __maybe_unused ilitek9882n_spi_probe(struct spi_device *spi)
 #ifdef CONFIG_OPLUS_TP_APK
     ilits->demo_debug_info[0] = ili_demo_debug_info_id0;
     ili_init_oplus_apk_op(ts);
-#endif /*CONFIG_OPLUS_TP_APK*/
+#endif // end of CONFIG_OPLUS_TP_APK
 
     if (ts->esd_handle_support) {
         ts->esd_info.esd_work_time = msecs_to_jiffies(WQ_ESD_DELAY);

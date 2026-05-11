@@ -176,6 +176,8 @@ bool oplus_get_otg_online_status_default(void);
 #define USB_RESERVE4		0x10//bit4
 #define USB_DONOT_USE		0x80000000
 static int usb_status = 0;
+#define OPLUS_MIN_PDO_VOL 5000
+#define OPLUS_MIN_PDO_CUR 3000
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 19, 0))
 extern int acm_shortcut(void);
@@ -1451,6 +1453,16 @@ int charger_psy_event(struct notifier_block *nb, unsigned long event, void *v)
 	return NOTIFY_DONE;
 }
 
+static void oplus_check_charger_out_func(struct work_struct *work)
+{
+	if ((oplus_vooc_get_fastchg_started() == true) ||
+	    (oplus_vooc_get_fastchg_to_normal() == true) ||
+	    (oplus_vooc_get_fastchg_to_warm() == true) ||
+	    (oplus_vooc_get_fastchg_dummy_started() == true))
+		oplus_voocphy_chg_out_check_event_handle(true);
+	return;
+}
+
 void mtk_charger_int_handler(void)
 {
 #ifdef OPLUS_FEATURE_CHG_BASIC
@@ -1487,6 +1499,19 @@ void mtk_charger_int_handler(void)
 			if (g_oplus_chip)
 				g_oplus_chip->usbtemp_check = oplus_usbtemp_condition();
 #endif
+
+#ifdef OPLUS_FEATURE_CHG_BASIC
+			if (oplus_chg_get_voocphy_support() == AP_SINGLE_CP_VOOCPHY ||
+			    oplus_chg_get_voocphy_support() == AP_DUAL_CP_VOOCPHY) {
+				if (oplus_vooc_get_fastchg_started() == true &&
+				    g_oplus_chip->is_abnormal_adapter != true) {
+					chg_err("!!!charger out but fastchg still true, need check charger out\n");
+					schedule_delayed_work(&pinfo->check_charger_out_work,
+					                      round_jiffies_relative(msecs_to_jiffies(3000)));
+				}
+			}
+#endif
+
 			if (mtkhv_flashled_pinctrl.hv_flashled_support) {
 				mtkhv_flashled_pinctrl.bc1_2_done = false;
 				if(mt6360_get_vbus_rising() != true) {
@@ -6611,6 +6636,48 @@ int oplus_chg_pps_get_max_cur(int vbus_mv)
 	else
 		return -EINVAL;
 }
+
+int oplus_pps_pd_exit(void)
+{
+	int ret = -1;
+	int vbus_mv_t = OPLUS_MIN_PDO_VOL;
+	int ibus_ma_t = OPLUS_MIN_PDO_CUR;
+
+	struct oplus_chg_chip *chip = g_oplus_chip;
+	struct tcpc_device *tcpc = NULL;
+
+	if (chip == NULL) {
+		chg_err("no oplus_chg_chip");
+		return -ENODEV;
+	}
+
+	if (oplus_mt_get_vbus_status() == false)
+		return ret;
+	tcpc = tcpc_dev_get_by_name("type_c_port0");
+	if (tcpc == NULL) {
+		chg_err("get type_c_port0 fail");
+		return -EINVAL;
+	}
+
+	ret = tcpm_set_pd_charging_policy(tcpc, DPM_CHARGING_POLICY_VSAFE5V, NULL);
+
+	ret = tcpm_dpm_pd_request(tcpc, vbus_mv_t, ibus_ma_t, NULL);
+	if (ret != TCPM_SUCCESS) {
+		chg_err("tcpm_dpm_pd_request fail");
+		return -EINVAL;
+	}
+
+	ret = tcpm_inquire_pd_contract(tcpc, &vbus_mv_t, &ibus_ma_t);
+	if (ret != TCPM_SUCCESS) {
+		chg_err("inquire current vbus_mv and ibus_ma fail");
+		return -EINVAL;
+	}
+
+	msleep(100);
+	chg_err("Tacoo PD Default vbus_mv[%d], ibus_ma[%d]", vbus_mv_t, ibus_ma_t);
+
+	return ret;
+}
 #endif
 
 #ifdef OPLUS_FEATURE_CHG_BASIC
@@ -6624,9 +6691,14 @@ int oplus_chg_get_charger_subtype(void)
 		return CHARGER_SUBTYPE_UFCS;
 	}
 	if (pinfo->pd_type == MTK_PD_CONNECT_PE_READY_SNK ||
-		pinfo->pd_type == MTK_PD_CONNECT_PE_READY_SNK_PD30 ||
-		pinfo->pd_type == MTK_PD_CONNECT_PE_READY_SNK_APDO)
-		return CHARGER_SUBTYPE_PD;
+		pinfo->pd_type == MTK_PD_CONNECT_PE_READY_SNK_PD30) {
+			return CHARGER_SUBTYPE_PD;
+	} else if (pinfo->pd_type == MTK_PD_CONNECT_PE_READY_SNK_APDO) {
+		if (oplus_pps_check_third_pps_support())
+			return CHARGER_SUBTYPE_PPS;
+		else
+			return CHARGER_SUBTYPE_PD;
+	}
 #ifdef CONFIG_OPLUS_HVDCP_SUPPORT
 	if (mt6360_get_hvdcp_type() == POWER_SUPPLY_TYPE_USB_HVDCP) {
 		return CHARGER_SUBTYPE_QC;
@@ -6649,6 +6721,8 @@ void oplus_chg_choose_gauge_curve(int index_curve)
 		target_index_curve = CHARGER_FASTCHG_VOOC_AND_QCPD_CURVE;
 	} else if (index_curve == 0) {
 		target_index_curve = CHARGER_NORMAL_CHG_CURVE;
+	} else if (index_curve == CHARGER_SUBTYPE_PPS || index_curve == CHARGER_SUBTYPE_UFCS) {
+		target_index_curve = CHARGER_FASTCHG_PPS_AND_UFCS_CURVE;
 	} else {
 		target_index_curve = CHARGER_FASTCHG_SVOOC_CURVE;
 	}
@@ -8031,6 +8105,7 @@ static int mtk_charger_probe(struct platform_device *pdev)
 	_wake_up_charger(info);
 #ifdef OPLUS_FEATURE_CHG_BASIC
 	INIT_DELAYED_WORK(&pinfo->step_charging_work, mt6360_step_charging_work);
+	INIT_DELAYED_WORK(&pinfo->check_charger_out_work, oplus_check_charger_out_func);
 	chg_err("oplus_chg_wake_update_work!\n");
 	oplus_chg_wake_update_work();
 #endif

@@ -9,7 +9,7 @@
 #include <linux/i2c.h>
 #include <linux/firmware.h>
 
-#define LONG_SWIPE_JUDGE_RATIO      6
+#define LONG_SWIPE_JUDGE_RATIO      9
 
 #define SWIPE_BROKEN_FRAMES_MS      2500//2.5frams * 1000ms
 #define SWIPE_BROKEN_JUDGE_RATIO    35

@@ -1455,7 +1455,7 @@ static int hx83112a_nf_nf_zf_part_info(const struct firmware *fw_entry)
         g_hx83112a_nf_core_fp.fp_clean_sram_0f(hx83112a_nf_pzf_op->data_mode_switch, 4, 2);
 
     getnstimeofday(&timeEnd);
-    timeDelta.tv_nsec = (timeEnd.tv_sec * 1000000000 + timeEnd.tv_nsec) - (timeStart.tv_sec * 1000000000 + timeStart.tv_nsec);
+	timeDelta.tv_nsec = (timeEnd.tv_sec * 1000000000 + timeEnd.tv_nsec) - (timeStart.tv_sec * 1000000000 + timeStart.tv_nsec);
     TPD_INFO("update firmware time = %ld us\n", timeDelta.tv_nsec / 1000);
     return 0;
 }
@@ -2926,7 +2926,7 @@ int hx83112a_nf_get_rawdata(struct chip_data_hx83112a_nf *chip_info, uint32_t *R
     uint32_t j = 0;
     uint32_t index = 0;
     uint32_t Min_DATA = 0xFFFFFFFF;
-    uint32_t Max_DATA = 0x00000000;
+	uint32_t Max_DATA = 0x00000000;
 #endif
 
     //1 Set Data Ready PWD
@@ -3461,9 +3461,9 @@ int hx83112a_nf_mpTestFunc(struct chip_data_hx83112a_nf *chip_info, uint8_t chec
 
     uint32_t i/*, j*/ = 0;
     uint16_t weight = 0;
-    uint32_t RAW[datalen];
+	uint32_t *RAW = NULL;
 #ifdef RAWDATA_NOISE
-    uint32_t RAW_Rawdata[datalen];
+	uint32_t *RAW_Rawdata = NULL;
 #endif
     char *rslt_log = NULL;
     char *start_log = NULL;
@@ -3472,6 +3472,19 @@ int hx83112a_nf_mpTestFunc(struct chip_data_hx83112a_nf *chip_info, uint8_t chec
     int CRITERIA_RAWDATA_MAX = RAWMAX;
     int CRITERIA_LPWUG_RAWDATA_MAX = LPWUG_RAWDATA_MAX;
     int CRITERIA_LPWUG_IDLE_RAWDATA_MAX = LPWUG_IDLE_RAWDATA_MAX;
+
+	RAW =  (uint32_t *)kcalloc(datalen, sizeof(uint32_t), GFP_KERNEL);
+	if (RAW == NULL) {
+		TPD_INFO("%s, Failed to allocate memory\n", __func__);
+		return MEM_ALLOC_FAIL;
+	}
+#ifdef RAWDATA_NOISE
+	RAW_Rawdata = (uint32_t *)kcalloc(datalen, sizeof(uint32_t), GFP_KERNEL);
+	if (RAW_Rawdata == NULL) {
+		TPD_INFO("%s, Failed to allocate memory\n", __func__);
+		return MEM_ALLOC_FAIL;
+	}
+#endif
 
     if (hx83112a_nf_isBD12proj) {
         CRITERIA_RAWDATA_MIN = RAWMIN_BD12;
@@ -3536,7 +3549,7 @@ int hx83112a_nf_mpTestFunc(struct chip_data_hx83112a_nf *chip_info, uint8_t chec
         tmp_addr[1] = 0x00;
         tmp_addr[0] = 0x00;
         hx83112a_nf_register_read(tmp_addr, 4, tmp_data, false);
-        TPD_INFO("%s: 10000000: data[0]=%0x02X, data[1]=%0x02X, data[2]=%0x02X, data[3]=%0x02X, \n", __func__, tmp_data[0], tmp_data[1], tmp_data[2], tmp_data[3]);
+		TPD_INFO("%s: 10000000: data[0]=%0x02X, data[1]=%0x02X, data[2]=%0x02X, data[3]=%0x02X, \n", __func__, tmp_data[0], tmp_data[1], tmp_data[2], tmp_data[3]);
 
         tmp_addr[3] = 0x10;
         tmp_addr[2] = 0x00;
@@ -3552,7 +3565,7 @@ int hx83112a_nf_mpTestFunc(struct chip_data_hx83112a_nf *chip_info, uint8_t chec
         hx83112a_nf_register_read(tmp_addr, 4, tmp_data, false);
         TPD_INFO("%s: 800204B4: data[0]=%0x02X, data[1]=%0x02X, data[2]=%0x02X, data[3]=%0x02X, \n", __func__, tmp_data[0], tmp_data[1], tmp_data[2], tmp_data[3]);
 
-        //900000A8,10007F40,10000000,10007F04,800204B4
+		/* 900000A8,10007F40,10000000,10007F04,800204B4 */
         return ret;
     }
 
@@ -3830,7 +3843,17 @@ RET_OUT:
     }
     if (start_log) {
         kfree(start_log);
-    }
+	}
+	if (RAW) {
+        kfree(RAW);
+	}
+
+#ifdef RAWDATA_NOISE
+	if (AW_Rawdata) {
+        kfree(RAW_Rawdata);
+	}
+#endif
+
     return RESULT_ERR;
 }
 
@@ -5178,14 +5201,26 @@ void hx83112a_nf_ts_diag_func(struct chip_data_hx83112a_nf *chip_info, int32_t *
     int j = 0;
     unsigned int index = 0;
     int total_size = chip_info->hw_res->TX_NUM * chip_info->hw_res->RX_NUM * 2;
-    uint8_t info_data[total_size];
+	uint8_t *info_data = NULL;
 
     int32_t new_data;
     /* 1:common dsram,2:100 frame Max,3:N-(N-1)frame */
     int dsram_type = 0;
-    char write_buf[total_size * 3];
+	char *write_buf = NULL;
 
-    memset(write_buf, '\0', sizeof(write_buf));
+	info_data = (uint8_t *)kcalloc(total_size, sizeof(uint32_t), GFP_KERNEL);
+	if (info_data == NULL) {
+        TPD_INFO("%s, Failed to allocate memory\n", __func__);
+		goto mem_alloc_fail;
+	}
+
+	write_buf = (char *)kcalloc(total_size * 3, sizeof(char), GFP_KERNEL);
+	if (write_buf == NULL) {
+        TPD_INFO("%s, Failed to allocate memory\n", __func__);
+        goto mem_alloc_fail;
+	}
+
+	memset(&write_buf, '\0', sizeof(write_buf));
 
     dsram_type = hx83112a_nf_diag_command / 10;
 
@@ -5207,6 +5242,16 @@ void hx83112a_nf_ts_diag_func(struct chip_data_hx83112a_nf *chip_info, int32_t *
             index += 2;
         }
     }
+
+
+mem_alloc_fail:
+	if (write_buf) {
+        kfree(write_buf);
+	}
+
+	if (info_data) {
+        kfree(info_data);
+	}
 }
 
 void hx83112a_nf_diag_parse_raw_data(struct hx83112a_nf_report_data *hx83112a_nf_touch_data, int mul_num, int self_num, uint8_t diag_cmd, int32_t *mutual_data, int32_t *self_data)
@@ -6262,7 +6307,6 @@ static int hx83112a_nf_reset(void *chip_data)
         TPD_INFO("%s: load_fw_times over 10 times\n", __func__);
     }
     hx83112a_nf_sense_on(0x00);
-
 
 #ifdef CONFIG_TOUCHPANEL_MTK_PLATFORM
     enable_irq(chip_info->hx_irq);

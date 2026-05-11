@@ -264,7 +264,9 @@ enum oplus_chg_track_info_flag {
 	TRACK_NOTIFY_FLAG_CHG_CYCLE_INFO,
 	TRACK_NOTIFY_FLAG_TTF_INFO,
 	TRACK_NOTIFY_FLAG_UISOH_INFO,
-	TRACK_NOTIFY_FLAG_GENERAL_RECORD_LAST = TRACK_NOTIFY_FLAG_UISOH_INFO,
+	TRACK_NOTIFY_FLAG_GAUGE_MODE,
+	TRACK_NOTIFY_FLAG_DEC_VOL_INFO,
+	TRACK_NOTIFY_FLAG_GENERAL_RECORD_LAST = TRACK_NOTIFY_FLAG_DEC_VOL_INFO,
 
 	TRACK_NOTIFY_FLAG_NO_CHARGING_FIRST,
 	TRACK_NOTIFY_FLAG_NO_CHARGING = TRACK_NOTIFY_FLAG_NO_CHARGING_FIRST,
@@ -303,7 +305,8 @@ enum oplus_chg_track_info_flag {
 	TRACK_NOTIFY_FLAG_HK_ABNORMAL,
 	TRACK_NOTIFY_FLAG_UFCS_IC_ABNORMAL,
 	TRACK_NOTIFY_FLAG_ADAPTER_ABNORMAL,
-	TRACK_NOTIFY_FLAG_DEVICE_ABNORMAL_LAST = TRACK_NOTIFY_FLAG_ADAPTER_ABNORMAL,
+	TRACK_NOTIFY_FLAG_NTC_ABNORMAL,
+	TRACK_NOTIFY_FLAG_DEVICE_ABNORMAL_LAST = TRACK_NOTIFY_FLAG_NTC_ABNORMAL,
 
 	TRACK_NOTIFY_FLAG_SOFTWARE_ABNORMAL_FIRST,
 	TRACK_NOTIFY_FLAG_UFCS_ABNORMAL = TRACK_NOTIFY_FLAG_SOFTWARE_ABNORMAL_FIRST,
@@ -360,6 +363,11 @@ enum oplus_chg_track_chg_status {
 	TRACK_WLS_FASTCHG_FULL,
 	TRACK_WLS_REPORT_FULL,
 	TRACK_WLS_CHG_DONE,
+};
+
+enum oplus_chg_track_full_curr_limit_status {
+	TRACK_1_TIME_FULL_CURR_LIMIT,
+	TRACK_N_TIME_FULL_CURR_LIMIT,
 };
 
 enum oplus_chg_track_cp_voocphy_break_code {
@@ -427,4 +435,10 @@ int oplus_chg_track_get_hk_err_reason(int err_type, char *err_reason, int len);
 int oplus_chg_track_set_app_info(const char *buf);
 int oplus_chg_olc_config_set(const char *buf);
 int oplus_chg_olc_config_get(char *buf);
+int oplus_track_upload_ntc_abnormal_info(int ntc_temp, char *ntc_name,
+						   char *scene, char *reason, char *other);
+int oplus_chg_track_upload_rechg_info(void);
+int oplus_chg_track_set_fcl_info(int type, int batt_volt, int batt_curr, int batt_temp);
+int oplus_chg_track_set_fcl_batt_r(int batt_r);
+
 #endif

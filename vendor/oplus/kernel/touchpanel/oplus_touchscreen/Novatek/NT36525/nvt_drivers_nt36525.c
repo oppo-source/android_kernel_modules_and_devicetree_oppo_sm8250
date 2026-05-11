@@ -250,7 +250,7 @@ static void nvt_bootloader_reset(struct chip_data_nt36525 *chip_info)
     msleep(35);
 }
 
-static void nvt_sw_reset_idle(struct chip_data_nt36525 *chip_info)
+void nvt_sw_reset_idle(struct chip_data_nt36525 *chip_info)
 {
     int ret = -1;
     uint8_t buf[4]={0};

@@ -98,10 +98,9 @@
 #endif
 
 #include "../../touchpanel_common.h"
-#include "../../touchpanel_healthinfo.h"
 #include <soc/oplus/system/oplus_project.h>
 
-#define DRIVER_VERSION                  "3.0.4.0.210906"
+#define DRIVER_VERSION                  "3.0.4.0.210420"
 
 /* Options */
 #define SPI_CLK                         9      /* follow by clk list */
@@ -462,7 +461,7 @@ struct report_info_block {
 #define I2C_ESD_GESTURE_PWD_ADDR                        0x40054
 
 #define ESD_GESTURE_CORE146_PWD                         0xF38A
-#define SPI_ESD_GESTURE_CORE146_RUN                     0x5B92
+#define SPI_ESD_GESTURE_CORE146_RUN                     0xA67C
 #define I2C_ESD_GESTURE_CORE146_RUN                     0xA67C
 #define SPI_ESD_GESTURE_CORE146_PWD_ADDR                0x4005C
 #define I2C_ESD_GESTURE_CORE146_PWD_ADDR                0x4005C
@@ -543,7 +542,6 @@ struct report_info_block {
 #define P5_X_FW_GESTURE_MODE                            0x0F
 #define P5_X_FW_DELTA_DATA_MODE                         0x03
 #define P5_X_FW_RAW_DATA_MODE                           0x08
-#define P5_X_FW_DELTA_SNR_DATA_MODE                     0x13
 #define P5_X_DEMO_PACKET_ID                             0x5A
 #define P5_X_DEBUG_PACKET_ID                            0xA7
 #define P5_X_DEMO_HIGH_RESOLUTION_PACKET_ID		0x5B
@@ -576,8 +574,6 @@ struct report_info_block {
 #define TDDI_PC_LATCH_ADDR                              0x51010
 #define TDDI_CHIP_RESET_ADDR                            0x40050
 #define RAWDATA_NO_BK_SHIFT                             8192
-
-#define ILITEK_DELTA_SNR_MASK (0x1 << 4)
 
 struct ilitek_ts_data {
     struct spi_device *spi;
@@ -704,14 +700,14 @@ struct ilitek_ts_data {
     atomic_t esd_stat;
 
 #ifdef CONFIG_OPLUS_TP_APK
-    bool plug_status;
-    bool lock_point_status;
-    bool debug_mode_sta;
-    bool debug_gesture_sta;
-    bool earphone_sta;
-    bool charger_sta;
-    bool noise_sta;
-#endif //end of CONFIG_OPLUS_TP_APK
+	bool plug_status;
+	bool lock_point_status;
+	bool debug_mode_sta;
+	bool debug_gesture_sta;
+	bool earphone_sta;
+	bool charger_sta;
+	bool noise_sta;
+#endif /*end of CONFIG_OPLUS_TP_APK*/
 
     int (*spi_write_then_read)(struct spi_device *spi,
                                const void *txbuf,
@@ -720,8 +716,6 @@ struct ilitek_ts_data {
                    u32 rlen, bool spi_irq, bool i2c_irq);
     void (*demo_debug_info[5])(u8 *, int);
     int (*detect_int_stat)(bool status);
-
-    struct monitor_data_v2 *monitor_data_v2;
 };
 extern struct ilitek_ts_data *ilits;
 

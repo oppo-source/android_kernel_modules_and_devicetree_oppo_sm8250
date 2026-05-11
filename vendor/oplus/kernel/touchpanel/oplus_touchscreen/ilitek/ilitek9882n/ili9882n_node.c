@@ -2566,7 +2566,7 @@ proc_node iliproc[] = {
     {"change_list", NULL, &proc_change_list_fops, false},
 };
 
-#define NETLINK_USER 21
+#define NETLINK_USER 0xff
 static struct sock *netlink_skb;
 static struct nlmsghdr *netlink_head;
 static struct sk_buff *skb_out;
